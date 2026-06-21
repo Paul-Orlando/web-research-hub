@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sse-starlette
+httpx
+pydantic
+python-dotenv
+fpdf2
+python-docx

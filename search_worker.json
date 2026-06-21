@@ -1,0 +1,269 @@
+{
+  "name": "Search Worker",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "source_type"
+            },
+            {
+              "name": "time_period"
+            },
+            {
+              "name": "domain_focus"
+            },
+            {
+              "name": "priority",
+              "type": "number"
+            },
+            {
+              "name": "start_date"
+            },
+            {
+              "name": "end_date"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2e093205-69d6-498d-b932-c4fb2a26d28a",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.exa.ai/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "contents",
+              "value": "={{ {  \"summary\": {\n        \"query\": \"Summarize the essential results\"\n      } } }}"
+            },
+            {
+              "name": "numResults",
+              "value": "={{ \"4\".toNumber() }}"
+            },
+            {
+              "name": "startPublishedDate",
+              "value": "={{ $json.start_date }}"
+            },
+            {
+              "name": "endPublishedDate",
+              "value": "={{ $json.end_date }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "76f50df8-ef7d-4e1f-8919-b5c11d86fcf6",
+      "name": "Exa API Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "dFb8MgCyBLoTpx46",
+          "name": "EXA_SEARCH_V1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"search_result\": {{ JSON.stringify($json.summary) }} ,\n  \"source\": {{ JSON.stringify($json.url) }},\n  \"publish_date\": {{ JSON.stringify($json.publishedDate) }}\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        912,
+        -120
+      ],
+      "id": "ee858d61-201d-4cbe-9443-77219188a332",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "results",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        688,
+        -120
+      ],
+      "id": "9be33818-6c11-4002-a69b-f6726f165643",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a8424247-3b18-4346-86b0-ab9f3039e37f",
+              "leftValue": "={{ $json.results ? $json.results.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        464,
+        0
+      ],
+      "id": "c0ff4a3d-631b-47dd-8df7-7832888080b4",
+      "name": "Check Results"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"query\": {{ JSON.stringify($('When Executed by Another Workflow').item.json.query) }},\n  \"search_result\": \"No results were found for this search query within the specified date range.\",\n  \"source\": \"\",\n  \"publish_date\": \"\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        688,
+        140
+      ],
+      "id": "9072cc88-5272-4065-9f79-8413edd3b2b5",
+      "name": "No Results Fallback"
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "query": "latest announcements from OpenAI",
+          "id": "official_announcements",
+          "source_type": "web",
+          "time_period": "recent",
+          "domain_focus": "technology",
+          "priority": 1,
+          "start_date": "2025-06-03T17:16:53.285Z",
+          "end_date": "2025-06-10T17:16:53.285Z"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Exa API Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exa API Request": {
+      "main": [
+        [
+          {
+            "node": "Check Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Results": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Results Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "3349072c-0018-447e-bac6-da0239289a0f",
+  "meta": {
+    "instanceId": "1b38842933aad98fa2f6fe55ab43a530e6727f8f5dd4b8295916be748f33f431"
+  },
+  "nodeGroups": [],
+  "id": "FFUzhWLy7EEWjeoB",
+  "tags": [
+    {
+      "updatedAt": "2026-05-25T15:04:52.987Z",
+      "createdAt": "2026-05-25T15:04:52.987Z",
+      "id": "n7j8Hl5tNOLLlUyN",
+      "name": "exa"
+    }
+  ]
+}
