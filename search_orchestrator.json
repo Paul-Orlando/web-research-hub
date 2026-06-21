@@ -1,0 +1,550 @@
+{
+  "name": "Search Orchestrator - prod",
+  "nodes": [
+    {
+      "parameters": {
+        "model": "google/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1776,
+        784
+      ],
+      "id": "e196dc50-8e41-45c3-ade0-0f3606ea9288",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "ByqF9LHRV5JS2qox",
+          "name": "OpenRouter account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.query }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are an expert research planner. Your task is to break down a complex research query into specific search subtasks, each focusing on a different aspect or source type.\n        \nThe current date and time is: {{ $now.toISO() }}\n\nFor each subtask, provide:\n1. A unique string ID for the subtask (e.g., 'subtask_1', 'news_update')\n2. A specific search query that focuses on one aspect of the main query\n3. The source type to search (web, news, academic, specialized)\n4. Time period relevance (today, last week, recent, past_year, all_time)\n5. Domain focus if applicable (technology, science, health, etc.)\n6. Priority level (1-highest to 5-lowest)\n        \nAll fields (id, query, source_type, time_period, domain_focus, priority) are required for each subtask, except time_period and domain_focus which can be null if not applicable.\n        \nCreate 2 subtasks that together will provide comprehensive coverage of the topic. Focus on different aspects, perspectives, or sources of information.\n\nEach substask will include the following information:\n\nid: str\nquery: str\nsource_type: str  # e.g., \"web\", \"news\", \"academic\", \"specialized\"\ntime_period: Optional[str] = None  # e.g., \"today\", \"last week\", \"recent\", \"past_year\", \"all_time\"\ndomain_focus: Optional[str] = None  # e.g., \"technology\", \"science\", \"health\"\npriority: int  # 1 (highest) to 5 (lowest)\n\nWhen inferring time windows: never use a future date as start_date or end_date relative to the current date/time given above. For \"recent\", use at least the past 14 days (not 7) to ensure there is enough indexed content to find real results - a too-narrow window often returns zero results. After obtaining the above subtasks information, you will add two extra fields. Those correspond to start_date and end_date. Infer this information given the current date and the time_period selected. start_date and end_date should use the format as in the example below:\n\n\"start_date\": \"2024-06-03T06:00:00.000Z\",\n\"end_date\": \"2024-06-11T05:59:59.999Z\","
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        560
+      ],
+      "id": "75e53d82-9c98-4d7c-87a3-fb2aff83106c",
+      "name": "Search Planner",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{$json.output.subtasks }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a search orchestrator agent. Your task is to execute search subtasks using the execute_search tool. \n\nThe input to the execute_search tool will be the resulting search subtasks, including all the information such as id, query, source_type, domain_focus, and priority, processed one by one.\n\nThe expected output will be an aggregated list with the search results, query, and source url, and each result follows the schema in this example:\n\n{\n\"query\": \"latest announcements from OpenAI\",\n\"search_result\": \"<full search text>\",\n\"source\": \"<url>\"\n}\n\nIt's important to provide the full search text for search_result as opposed to a summary.\n\nIMPORTANT - OUTPUT FORMAT RULES:\n1. Your final answer must ALWAYS be valid JSON matching the required schema, and nothing else. Never respond with plain-language explanations, apologies, or commentary as your final answer.\n2. If a subtask's search tool returns no results (an empty result, or a search_result saying no results were found), still include an entry for it in the JSON array using the query you searched for and search_result set to \"No results found\" - do not omit it, and do not break format because of it.\n3. If every single subtask returns no results, output a valid empty JSON array ([]) rather than explaining the absence of results in prose.\n4. Never wrap the JSON in markdown code fences or add text before/after it."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        2176,
+        560
+      ],
+      "id": "8e8ce9f4-7521-49fb-89be-1229e97868d7",
+      "name": "Search Orchestrator",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        784
+      ],
+      "id": "5ab94f4f-a325-4092-b8ef-ef2cfd8c377a",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "ByqF9LHRV5JS2qox",
+          "name": "OpenRouter account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"subtasks\": [\n    {\n      \"id\": \"openai_latest_news\",\n      \"query\": \"latest OpenAI announcements and news\",\n      \"source_type\": \"news\",\n      \"time_period\": \"recent\",\n      \"domain_focus\": \"technology\",\n      \"priority\": 1,\n      \"start_date\": \"2025-06-03T06:00:00.000Z\",\n      \"end_date\": \"2025-06-11T05:59:59.999Z\"\n    },\n    {\n      \"id\": \"openai_official_blog\",\n      \"query\": \"OpenAI official blog recent posts\",\n      \"source_type\": \"web\",\n      \"time_period\": \"recent\",\n      \"domain_focus\": \"technology\",\n      \"priority\": 2,\n      \"start_date\": \"2025-06-03T06:00:00.000Z\",\n      \"end_date\": \"2025-06-11T05:59:59.999Z\"\n    },\n    {\n      \"id\": \"openai_research_papers\",\n      \"query\": \"latest research papers from OpenAI\",\n      \"source_type\": \"academic\",\n      \"time_period\": \"past_year\",\n      \"domain_focus\": \"artificial intelligence\",\n      \"priority\": 3,\n      \"start_date\": \"2025-06-03T06:00:00.000Z\",\n      \"end_date\": \"2025-06-11T05:59:59.999Z\"\n    },\n    {\n      \"id\": \"openai_social_media\",\n      \"query\": \"OpenAI on Twitter\",\n      \"source_type\": \"specialized\",\n      \"time_period\": \"recent\",\n      \"domain_focus\": \"technology\",\n      \"priority\": 4,\n      \"start_date\": \"2025-06-03T06:00:00.000Z\",\n      \"end_date\": \"2025-06-11T05:59:59.999Z\"\n    }\n  ]\n}\n",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        1920,
+        784
+      ],
+      "id": "0f3be84c-a9d5-4b7f-a11b-98e1c5a42a5f",
+      "name": "Output Subtasks"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "[\n{ \"query\": \"latest announcements from OpenAI\",\n\t\"search_result\": \"<full search text>\",\n  \"source\": \"<url_source>\",\n  \"publish_date\": \"<publish_date>\"\n},\n{\n  \"query\": \"latest news about OpenAI\",\n  \"search_result\": \"<full search text>\",\n  \"source\": \"<url_source>\",\n  \"publish_date\": \"<publish_date>\"\n}\n]",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        2400,
+        784
+      ],
+      "id": "8e636a96-3fa1-4dbc-9a1d-a31ea901af55",
+      "name": "Query Results"
+    },
+    {
+      "parameters": {
+        "description": "Call this tool to execute web search subtasks. The input should be individual subtasks, one by one.",
+        "workflowId": {
+          "__rl": true,
+          "value": "FFUzhWLy7EEWjeoB",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/FFUzhWLy7EEWjeoB",
+          "cachedResultName": "Search Worker"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "query": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('query', ``, 'string') }}",
+            "id": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id', ``, 'string') }}",
+            "source_type": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('source_type', ``, 'string') }}",
+            "time_period": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('time_period', ``, 'string') }}",
+            "end_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('end_date', ``, 'string') }}",
+            "start_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('start_date', ``, 'string') }}",
+            "priority": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('priority', ``, 'number') }}",
+            "domain_focus": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('domain_focus', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "query",
+              "displayName": "query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "source_type",
+              "displayName": "source_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "time_period",
+              "displayName": "time_period",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "domain_focus",
+              "displayName": "domain_focus",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "start_date",
+              "displayName": "start_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "end_date",
+              "displayName": "end_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        2272,
+        784
+      ],
+      "id": "a17b0459-5f91-49c8-8c3b-4418cdec06c4",
+      "name": "Search Worker"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output ? $json.output : 'No search results could be retrieved due to a processing error: ' + ($json.error || 'unknown error') }}",
+        "options": {
+          "systemMessage": "Your task is to create a one-page report of the provided search results. I want to share this with my team. \n\n- First, categorize the search results and use appropriate headers\n- Then summarize the search results and add them as a list to the corresponding categories.\n- Make sure to include the citation using this format [source](url)"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        2592,
+        560
+      ],
+      "id": "967d0357-6a04-4a24-bf78-f5433f9a5ceb",
+      "name": "AI Summarizer"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4.1",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2592,
+        784
+      ],
+      "id": "495f1a7e-7967-495c-85ba-8f30b9f9a7dd",
+      "name": "OpenRouter Chat Model2",
+      "credentials": {
+        "openRouterApi": {
+          "id": "ByqF9LHRV5JS2qox",
+          "name": "OpenRouter account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Planner",
+        "height": 460,
+        "width": 340
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1728,
+        480
+      ],
+      "id": "d6361c41-c0f1-48c7-b3ec-15ae73c7c52a",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Orchestrator",
+        "height": 460,
+        "width": 380,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2112,
+        480
+      ],
+      "id": "08b1ffe6-2b98-4aff-b04f-f4735ce8def7",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Report Generator",
+        "height": 460,
+        "width": 360,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2528,
+        480
+      ],
+      "id": "d1fc6fb4-0461-4898-94d0-4dd6f34f5ec9",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Send Report",
+        "height": 460,
+        "width": 500,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2928,
+        480
+      ],
+      "id": "031956d5-40bd-4819-b20a-c68c9a502796",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "search",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        560
+      ],
+      "id": "4b4e3943-9ff7-45a0-8052-0f4f9056cdbc",
+      "name": "Webhook",
+      "webhookId": "bb23cd22-5cf1-4177-bf03-8271e2f911fc"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3216,
+        560
+      ],
+      "id": "ebc1d9a1-4ca9-4a09-9842-fce75122154e",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "mode": "markdownToHtml",
+        "markdown": "={{ $json.output }}",
+        "destinationKey": "output_html",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        3008,
+        560
+      ],
+      "id": "7470a130-f329-4b97-8b62-3918fc7b5fb1",
+      "name": "Markdown"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "body": {
+            "query": "The latest news from OpenAI?"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Search Planner",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Output Subtasks",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Planner": {
+      "main": [
+        [
+          {
+            "node": "Search Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Search Orchestrator",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Query Results",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Subtasks": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Search Planner",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Results": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Search Orchestrator",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Worker": {
+      "ai_tool": [
+        [
+          {
+            "node": "Search Orchestrator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "AI Summarizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Summarizer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Summarizer": {
+      "main": [
+        [
+          {
+            "node": "Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Search Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Markdown": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "32cc5fb1-7da5-40e0-99ca-be30c142abd0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1b38842933aad98fa2f6fe55ab43a530e6727f8f5dd4b8295916be748f33f431"
+  },
+  "nodeGroups": [],
+  "id": "AW9pzEVkZjEWnmpm",
+  "tags": [
+    {
+      "updatedAt": "2026-05-25T15:04:52.962Z",
+      "createdAt": "2026-05-25T15:04:52.962Z",
+      "id": "QmDgePdLbMVnWt9G",
+      "name": "orchestrator"
+    },
+    {
+      "updatedAt": "2026-05-25T15:04:52.987Z",
+      "createdAt": "2026-05-25T15:04:52.987Z",
+      "id": "n7j8Hl5tNOLLlUyN",
+      "name": "exa"
+    },
+    {
+      "updatedAt": "2026-05-25T15:04:53.011Z",
+      "createdAt": "2026-05-25T15:04:53.011Z",
+      "id": "oPdNB4eQqKl6YMTL",
+      "name": "search"
+    }
+  ]
+}

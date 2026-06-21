@@ -1,0 +1,15 @@
+# Node
+node_modules/
+dist/
+.pnpm-store/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# n8n local data
+.n8n/
