@@ -11,9 +11,7 @@ progress tracking, and export to PDF, DOCX, and Markdown.
 
 ## 🔗 Live Demo
 
-**[Try it live → web-research-hub-app.vercel.app](https://web-research-hub-app.vercel.app)**
-
-*(update this link once deployed)*
+**[Try it live → web-research-hub.vercel.app](https://web-research-hub.vercel.app/)**
 
 ---
 
