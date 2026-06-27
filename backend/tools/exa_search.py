@@ -1,8 +1,10 @@
+import json
 import os
 from typing import Optional
+
 import httpx
 
-EXA_API_URL = "https://api.exa.ai/search"
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
 
 _FALLBACK = lambda query: {
     "query": query,
@@ -19,43 +21,50 @@ async def exa_search(
     end_date: Optional[str],
     num_results: int = 4,
 ) -> list[dict]:
-    api_key = os.environ["EXA_API_KEY"]
-
-    payload: dict = {
-        "query": query,
-        "numResults": num_results,
-        "contents": {
-            "summary": {"query": "Summarize the essential results"}
-        },
-    }
-    if start_date:
-        payload["startPublishedDate"] = start_date
-    if end_date:
-        payload["endPublishedDate"] = end_date
-
     try:
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 1,
+            "params": {
+                "name": "web_search",
+                "arguments": {
+                    "query": query,
+                    "num_results": num_results,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            },
+        }
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                EXA_API_URL,
+                f"{MCP_SERVER_URL}/mcp",
                 json=payload,
-                headers={
-                    "x-api-key": api_key,
-                    "Content-Type": "application/json",
-                },
+                headers={"Content-Type": "application/json"},
             )
             response.raise_for_status()
             data = response.json()
 
-        results = data.get("results", [])
+        # MCP returns result.content[0].text as a JSON string
+        text = data["result"]["content"][0]["text"]
+        parsed = json.loads(text)
+
+        # Handle both {"results": [...]} and [...] top-level shapes
+        if isinstance(parsed, list):
+            results = parsed
+        else:
+            results = parsed.get("results", [])
+
         if not results:
             return [_FALLBACK(query)]
 
         return [
             {
                 "query": query,
-                "search_result": r.get("summary") or "",
+                "search_result": r.get("summary") or r.get("text") or "",
                 "source": r.get("url") or "",
-                "publish_date": r.get("publishedDate") or "",
+                "publish_date": r.get("publishedDate") or r.get("publish_date") or "",
                 "title": r.get("title") or "",
             }
             for r in results

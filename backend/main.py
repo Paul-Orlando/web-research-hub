@@ -1,12 +1,16 @@
+import base64
 import io
 import json
 import os
 import re
 from urllib.parse import urlparse
 
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
+
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -115,6 +119,34 @@ def _generate_docx(markdown_text: str) -> bytes:
     return buf.read()
 
 
+async def _mcp_export_report(content: str, fmt: str, title: str) -> bytes:
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "id": 1,
+        "params": {
+            "name": "export_report",
+            "arguments": {
+                "content": content,
+                "format": fmt,
+                "title": title,
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            f"{MCP_SERVER_URL}/mcp",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    text = data["result"]["content"][0]["text"]
+    parsed = json.loads(text)
+    return base64.b64decode(parsed["content_base64"])
+
+
 # ── endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -214,6 +246,7 @@ async def download_report(session_id: str, fmt: str):
         raise HTTPException(status_code=404, detail="No report found for this session")
 
     report = history[-1]["report"]
+    title = history[-1].get("query", "Research Report")
 
     if fmt == "md":
         return Response(
@@ -222,14 +255,20 @@ async def download_report(session_id: str, fmt: str):
             headers={"Content-Disposition": "attachment; filename=report.md"},
         )
     elif fmt == "pdf":
-        content = _generate_pdf(report)
+        try:
+            content = await _mcp_export_report(report, "pdf", title)
+        except Exception:
+            content = _generate_pdf(report)
         return Response(
             content=content,
             media_type="application/pdf",
             headers={"Content-Disposition": "attachment; filename=report.pdf"},
         )
     elif fmt == "docx":
-        content = _generate_docx(report)
+        try:
+            content = await _mcp_export_report(report, "docx", title)
+        except Exception:
+            content = _generate_docx(report)
         return Response(
             content=content,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
