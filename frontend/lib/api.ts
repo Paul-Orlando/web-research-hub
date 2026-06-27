@@ -1,5 +1,9 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
 
+if (!BASE_URL) {
+  console.error("NEXT_PUBLIC_API_URL is not set — API calls will fail");
+}
+
 export type DepthMode = "quick" | "standard" | "deep";
 
 export interface SourceEntry {
