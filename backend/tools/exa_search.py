@@ -77,9 +77,19 @@ async def exa_search(
                 headers=tool_headers,
             )
             response.raise_for_status()
-            data = response.json()
+            response_text = response.text
+            print(f"[exa_search] raw MCP response text: {response_text[:500]}")
 
-        print(f"[exa_search] raw MCP response: {json.dumps(data)[:2000]}")
+            # MCP Streamable HTTP responds with SSE: lines like "data: {...}"
+            data = None
+            for line in response_text.splitlines():
+                if line.startswith("data: "):
+                    data = json.loads(line[6:])
+                    break
+            if data is None:
+                data = json.loads(response_text)
+
+        print(f"[exa_search] parsed MCP response: {json.dumps(data)[:2000]}")
 
         # MCP returns result.content[0].text as a JSON string
         text = data["result"]["content"][0]["text"]
