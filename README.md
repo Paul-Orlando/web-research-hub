@@ -30,8 +30,22 @@ DOCX, or Markdown.
 ## Architecture
 
 ```
-Next.js Frontend
-        ↓ SSE stream
+Web Research Agent (Vercel/Next.js)
+         ↓ SSE stream
+FastAPI Orchestrator (Railway)
+         ↓ MCP Streamable HTTP
+Web Research Hub MCP Server (Railway)
+         ↓
+     Exa AI (web_search)
+     httpx + BS4 (fetch_url)
+     fpdf2/python-docx (export_report)
+```
+
+### Internal Pipeline
+
+```
+FastAPI Orchestrator
+        │
 ┌─────────────────────────────────────────┐
 │   1. SEARCH PLANNER                     │
 │   OpenRouter — google/gemini-2.5-flash  │
@@ -50,26 +64,27 @@ Next.js Frontend
 │   2. SEARCH ORCHESTRATOR                │
 │   Pure Python — no LLM call             │
 │                                          │
-│   Loops through subtasks, calling the   │
-│   Exa search tool directly for each one │
+│   Loops through subtasks, routing each  │
+│   to the MCP Server via Streamable HTTP │
 │                                          │
 │   numResults scaled by search depth     │
 │   Empty result → entry still included   │
 │   Streams subtask_complete events live  │
 └──────────────┬───────────────────────────┘
                ↓
-        ┌──────────────────────┐
-        │   EXA SEARCH TOOL      │
-        │   (pure async function)│
-        │                        │
-        │   Exa API request      │
-        │   date-range scoped    │
-        │   numResults by depth  │
-        │                        │
-        │   Never throws —       │
-        │   graceful fallback    │
-        │   on zero results      │
-        └──────────────┬─────────┘
+        ┌──────────────────────────┐
+        │  WEB RESEARCH HUB MCP    │
+        │  SERVER                  │
+        │                          │
+        │  web_search — Exa API    │
+        │  fetch_url — httpx+BS4   │
+        │  export_report — fpdf2 / │
+        │  python-docx             │
+        │                          │
+        │  Never throws —          │
+        │  graceful fallback       │
+        │  on zero results         │
+        └──────────────┬───────────┘
                ↓
 ┌─────────────────────────────────────────┐
 │   3. AI SUMMARIZER                      │
@@ -161,6 +176,14 @@ PDF or DOCX. Exports now render citations as `claim text
 (domain.com)` so the source remains identifiable even outside
 the live app.
 
+**MCP Server as the tool layer**
+The backend no longer calls Exa directly. All search and export
+calls route through the Web Research Hub MCP Server via MCP
+Streamable HTTP. This makes the tool layer independently reusable
+by any MCP-compatible client — not just this app. The MCP server
+is a separate deployable service at
+[github.com/Paul-Orlando/web-research-hub-mcp-server](https://github.com/Paul-Orlando/web-research-hub-mcp-server).
+
 ---
 
 ## Tech Stack
@@ -171,6 +194,7 @@ the live app.
 | Backend | Python FastAPI |
 | LLM Provider | OpenRouter (google/gemini-2.5-flash) |
 | Search | Exa AI (date-range filtered web search) |
+| MCP Server | Web Research Hub MCP Server |
 | Streaming | SSE (Server-Sent Events) |
 | Export | fpdf2 (PDF), python-docx (DOCX) |
 | Frontend Hosting | Vercel |
@@ -298,6 +322,7 @@ Frontend runs at `http://localhost:3000`
 |---|---|---|
 | `OPENROUTER_API_KEY` | ✅ | OpenRouter API key for all LLM calls |
 | `EXA_API_KEY` | ✅ | Exa AI API key for web search |
+| `MCP_SERVER_URL` | ✅ | URL of the Web Research Hub MCP Server |
 | `CORS_ORIGIN_REGEX` | optional | Default: `https://.*\.vercel\.app` |
 
 ### Frontend (`frontend/.env.local`)
@@ -418,7 +443,7 @@ hierarchical research pipeline. The n8n workflow files are
 preserved in the `workflow/` folder, exported directly from the
 working production workflow prior to the prototype being retired.
 
-**Phase 2 — Standalone rebuild (current)**
+**Phase 2 — Standalone rebuild**
 Rebuilt as a direct FastAPI + Next.js application, removing the
 n8n runtime dependency entirely while preserving the same
 three-agent architecture, system prompts, and routing logic.
@@ -427,12 +452,20 @@ Panel, real-time progress streaming, multi-turn sessions, and
 document export — closing every gap identified in Phase 1's
 Known Limitations.
 
+**Phase 3 — MCP Integration (current)**
+Introduced the Web Research Hub MCP Server as the tool layer,
+replacing direct Exa API calls in the backend. All web search
+and export operations now route through the MCP server via
+Streamable HTTP, making the tool layer independently reusable
+by any MCP-compatible client.
+
 ---
 
 ## Related Repos
 
 | Repo | Pattern | Framework |
 |---|---|---|
+| [web-research-hub-mcp-server](https://github.com/Paul-Orlando/web-research-hub-mcp-server) | MCP Server | FastAPI + FastMCP |
 | [ai-n8n-deep-research-agent](https://github.com/Paul-Orlando/ai-n8n-deep-research-agent) | Hierarchical Multi-Agent | n8n + Exa + Google Sheets |
 | [ai-n8n-document-generator](https://github.com/Paul-Orlando/ai-n8n-document-generator) | LLM Chain + Quality Gate | n8n + OpenRouter |
 | [deep-research-agent](https://github.com/Paul-Orlando/deep-research-agent) | Full-Stack Research App | Claude Code + Next.js + Exa |
