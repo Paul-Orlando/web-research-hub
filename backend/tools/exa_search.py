@@ -22,18 +22,21 @@ async def exa_search(
     num_results: int = 4,
 ) -> list[dict]:
     try:
+        # Only include date args when they have values — passing null
+        # causes the MCP server to apply its own default date range.
+        arguments: dict = {"query": query, "num_results": num_results}
+        if start_date:
+            arguments["start_date"] = start_date
+        if end_date:
+            arguments["end_date"] = end_date
+
         payload = {
             "jsonrpc": "2.0",
             "method": "tools/call",
             "id": 1,
             "params": {
                 "name": "web_search",
-                "arguments": {
-                    "query": query,
-                    "num_results": num_results,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                },
+                "arguments": arguments,
             },
         }
 
@@ -45,6 +48,8 @@ async def exa_search(
             )
             response.raise_for_status()
             data = response.json()
+
+        print(f"[exa_search] raw MCP response: {json.dumps(data)[:2000]}")
 
         # MCP returns result.content[0].text as a JSON string
         text = data["result"]["content"][0]["text"]
@@ -64,10 +69,12 @@ async def exa_search(
                 "query": query,
                 "search_result": r.get("summary") or r.get("text") or "",
                 "source": r.get("url") or "",
-                "publish_date": r.get("publishedDate") or r.get("publish_date") or "",
+                # MCP server returns "published_date" (not "publishedDate")
+                "publish_date": r.get("published_date") or r.get("publishedDate") or r.get("publish_date") or "",
                 "title": r.get("title") or "",
             }
             for r in results
         ]
-    except Exception:
+    except Exception as exc:
+        print(f"[exa_search] error: {exc}")
         return [_FALLBACK(query)]
