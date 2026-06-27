@@ -40,8 +40,6 @@ async def exa_search(
             },
         }
 
-        print(f"[exa_search] MCP request body: {json.dumps(payload)}")
-
         async with httpx.AsyncClient(timeout=30.0) as client:
             init_response = await client.post(
                 f"{MCP_SERVER_URL}/mcp",
@@ -62,7 +60,6 @@ async def exa_search(
             )
             init_response.raise_for_status()
             session_id = init_response.headers.get("mcp-session-id")
-            print(f"[exa_search] MCP session_id: {session_id}")
 
             tool_headers = {
                 "Content-Type": "application/json",
@@ -78,7 +75,6 @@ async def exa_search(
             )
             response.raise_for_status()
             response_text = response.text
-            print(f"[exa_search] raw MCP response text: {response_text[:500]}")
 
             # MCP Streamable HTTP responds with SSE: lines like "data: {...}"
             data = None
@@ -88,8 +84,6 @@ async def exa_search(
                     break
             if data is None:
                 data = json.loads(response_text)
-
-        print(f"[exa_search] parsed MCP response: {json.dumps(data)[:2000]}")
 
         # MCP returns result.content[0].text as a JSON string
         text = data["result"]["content"][0]["text"]
