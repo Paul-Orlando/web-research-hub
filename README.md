@@ -288,7 +288,8 @@ python -m venv .venv && source .venv/bin/activate
 
 pip install -r requirements.txt
 cp ../.env.example .env
-# Add your OPENROUTER_API_KEY, EXA_API_KEY, and MCP_SERVER_URL
+# Add your OPENROUTER_API_KEY, EXA_API_KEY, MCP_SERVER_URL,
+# and MCP_API_KEY to .env
 
 uvicorn main:app --reload
 ```
@@ -319,6 +320,7 @@ Frontend runs at `http://localhost:3000`
 | `OPENROUTER_API_KEY` | ✅ | OpenRouter API key for all LLM calls |
 | `EXA_API_KEY` | ✅ | Exa AI API key — passed to the MCP Server |
 | `MCP_SERVER_URL` | ✅ | URL of the Web Research Hub MCP Server |
+| `MCP_API_KEY` | ✅ | Auth key for the MCP Server — must match the key set on the MCP server |
 | `CORS_ORIGIN_REGEX` | optional | Default: `https://.*\.vercel\.app` |
 
 ### Frontend (`frontend/.env.local`)
@@ -336,7 +338,7 @@ Frontend runs at `http://localhost:3000`
 1. New project → Deploy from GitHub repo
 2. Set Root Directory: `backend`
 3. Add environment variables:
-   `OPENROUTER_API_KEY`, `EXA_API_KEY`, `MCP_SERVER_URL`
+   `OPENROUTER_API_KEY`, `EXA_API_KEY`, `MCP_SERVER_URL`, `MCP_API_KEY`
 4. Procfile already configured:
 ```
 web: uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -366,6 +368,12 @@ The backend uses `allow_origin_regex` to whitelist all
 Baked into the JavaScript bundle at build time. If marked
 Sensitive in Vercel, the value won't be available during the
 build step and requests will fail.
+
+**MCP_API_KEY must match on both services**
+The Web Research Hub backend passes `MCP_API_KEY` as an
+`X-API-Key` header on every call to the MCP Server. Both
+Railway services must have the same key value set — if they
+differ, every search will return a 401 Unauthorized error.
 
 ---
 
@@ -405,6 +413,15 @@ All three agent calls route through OpenRouter using a single
 model. There's no automatic fallback if OpenRouter or the
 underlying model is unavailable.
 
+**MCP Server rate limited to 10 requests per IP per hour**
+One search generates approximately 4-5 MCP calls internally
+(MCP handshake + one tool call per subtask), allowing roughly
+2 complete Quick searches per hour on the demo server. For
+unrestricted use, self-host the MCP server with your own API
+keys — see
+[web-research-hub-mcp-server](https://github.com/Paul-Orlando/web-research-hub-mcp-server)
+for deployment instructions.
+
 ---
 
 ## Roadmap
@@ -442,7 +459,9 @@ Introduced the Web Research Hub MCP Server as the tool layer,
 replacing direct Exa API calls in the backend. All web search
 and export operations now route through the MCP server via
 Streamable HTTP, making the tool layer independently reusable
-by any MCP-compatible client.
+by any MCP-compatible client. Added API key authentication
+and sliding-window rate limiting (10 requests/IP/hour) to
+the MCP server.
 
 ---
 
@@ -453,7 +472,7 @@ by any MCP-compatible client.
 | [web-research-hub-mcp-server](https://github.com/Paul-Orlando/web-research-hub-mcp-server) | MCP Server | FastAPI + FastMCP |
 | [ai-n8n-deep-research-agent](https://github.com/Paul-Orlando/ai-n8n-deep-research-agent) | Hierarchical Multi-Agent | n8n + Exa + Google Sheets |
 | [ai-n8n-document-generator](https://github.com/Paul-Orlando/ai-n8n-document-generator) | LLM Chain + Quality Gate | n8n + OpenRouter |
-| [deep-research-agent](https://github.com/Paul-Orlando/deep-research-agent) | Full-Stack Research App | Claude Code + Next.js + Exa |
+| [deep-research-agent-app](https://github.com/Paul-Orlando/deep-research-agent-app) | Full-Stack Research App | Claude Code + Next.js + Exa |
 | [ai-agent-team-supervisor-app](https://github.com/Paul-Orlando/ai-agent-team-supervisor-app) | Supervisor Pattern | OpenAI Agents SDK |
 | [pinecone-mcp-server](https://github.com/Paul-Orlando/pinecone-mcp-server) | Custom MCP Server | Node.js + Pinecone |
 
