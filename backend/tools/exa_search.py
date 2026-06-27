@@ -43,13 +43,38 @@ async def exa_search(
         print(f"[exa_search] MCP request body: {json.dumps(payload)}")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
+            init_response = await client.post(
                 f"{MCP_SERVER_URL}/mcp",
-                json=payload,
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "initialize",
+                    "id": 0,
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "web-research-hub", "version": "1.0"},
+                    },
+                },
                 headers={
                     "Content-Type": "application/json",
                     "Accept": "application/json, text/event-stream",
                 },
+            )
+            init_response.raise_for_status()
+            session_id = init_response.headers.get("mcp-session-id")
+            print(f"[exa_search] MCP session_id: {session_id}")
+
+            tool_headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+            if session_id:
+                tool_headers["mcp-session-id"] = session_id
+
+            response = await client.post(
+                f"{MCP_SERVER_URL}/mcp",
+                json=payload,
+                headers=tool_headers,
             )
             response.raise_for_status()
             data = response.json()
