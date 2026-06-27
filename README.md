@@ -1,5 +1,5 @@
 # Web Research Hub
-### Next.js · FastAPI · OpenRouter · Gemini 2.5 Flash · Exa AI
+### Next.js · FastAPI · OpenRouter · Gemini 2.5 Flash · Exa AI · MCP
 
 A hierarchical, three-agent web research pipeline that decomposes
 a research question into parallel search subtasks, executes them
@@ -124,6 +124,9 @@ FastAPI Orchestrator
   reload
 - **SSE streaming** — the frontend receives live pipeline events,
   not just a final result
+- **MCP tool layer** — search and export operations route through
+  the Web Research Hub MCP Server, making the tool layer
+  independently reusable by any MCP-compatible client
 
 ---
 
@@ -139,49 +142,41 @@ portfolio's other multi-agent builds.
 **Orchestrator is deterministic, not an LLM call**
 In the original n8n prototype, orchestration was handled by an
 agent node calling a sub-workflow as a tool. In this rebuild,
-that step is a plain Python loop calling the Exa search function
-directly — faster, cheaper, and removes an unnecessary LLM call
-from a step that was always purely mechanical (call a tool N
-times, collect N results).
+that step is a plain Python loop calling the MCP Server directly
+— faster, cheaper, and removes an unnecessary LLM call from a
+step that was always purely mechanical.
 
 **Source List Panel built from search results, not re-parsed
 from the Summarizer's output**
-Earlier designs considered having the Summarizer emit a
-structured source list alongside its report. This was deliberately
-avoided — the source list is now built directly from the
-Orchestrator's collected results before the Summarizer ever runs,
-so a formatting slip in the final report can never break source
+The source list is built directly from the Orchestrator's
+collected results before the Summarizer ever runs, so a
+formatting slip in the final report can never break source
 attribution.
 
 **Search Depth Toggle replaces the original fixed subtask count**
-The n8n prototype always created exactly 2 subtasks regardless of
-query complexity. This was a known limitation, documented as such
-at the time. The rebuild fixes it directly: Quick, Standard, and
-Deep modes scale both subtask count and per-subtask result count.
+The n8n prototype always created exactly 2 subtasks regardless
+of query complexity. The rebuild fixes this directly: Quick,
+Standard, and Deep modes scale both subtask count and
+per-subtask result count.
 
 **Single model family via OpenRouter**
 The n8n prototype split work across Gemini 2.5 Flash (planning,
-orchestration) and GPT-4.1 (synthesis only) — a deliberate dual-
-tier cost strategy. This rebuild simplifies to Gemini 2.5 Flash
-across all LLM calls via OpenRouter. This is a documented
-tradeoff: if synthesis quality (categorization coherence, citation
-formatting) is ever noticeably weaker than the original GPT-4.1
-output, the Summarizer model can be swapped back via a one-line
-change in `summarizer.py`.
+orchestration) and GPT-4.1 (synthesis only). This rebuild
+simplifies to Gemini 2.5 Flash across all LLM calls via
+OpenRouter. If synthesis quality is ever noticeably weaker,
+the Summarizer model can be swapped back via a one-line change
+in `summarizer.py`.
 
 **Citations render as visible domains in exported documents**
-Markdown links render correctly as clickable text in the browser,
-but `[source](url)` syntax has no meaning once flattened into a
-PDF or DOCX. Exports now render citations as `claim text
-(domain.com)` so the source remains identifiable even outside
-the live app.
+Exports render citations as `claim text (domain.com)` so the
+source remains identifiable even outside the live app.
 
 **MCP Server as the tool layer**
 The backend no longer calls Exa directly. All search and export
 calls route through the Web Research Hub MCP Server via MCP
-Streamable HTTP. This makes the tool layer independently reusable
-by any MCP-compatible client — not just this app. The MCP server
-is a separate deployable service at
+Streamable HTTP. This makes the tool layer independently
+reusable by any MCP-compatible client — not just this app. The
+MCP server is a separate deployable service at
 [github.com/Paul-Orlando/web-research-hub-mcp-server](https://github.com/Paul-Orlando/web-research-hub-mcp-server).
 
 ---
@@ -193,8 +188,8 @@ is a separate deployable service at
 | Frontend | Next.js + shadcn/ui + Tailwind CSS |
 | Backend | Python FastAPI |
 | LLM Provider | OpenRouter (google/gemini-2.5-flash) |
-| Search | Exa AI (date-range filtered web search) |
-| MCP Server | Web Research Hub MCP Server |
+| Search | Exa AI (via Web Research Hub MCP Server) |
+| MCP Server | Web Research Hub MCP Server (Streamable HTTP) |
 | Streaming | SSE (Server-Sent Events) |
 | Export | fpdf2 (PDF), python-docx (DOCX) |
 | Frontend Hosting | Vercel |
@@ -208,7 +203,7 @@ is a separate deployable service at
 | Agent | Model | Role |
 |---|---|---|
 | Search Planner | google/gemini-2.5-flash | Decomposes query into N subtasks based on search depth |
-| Search Orchestrator | — (pure Python) | Executes each subtask via the Exa search tool |
+| Search Orchestrator | — (pure Python) | Routes each subtask to the MCP Server via Streamable HTTP |
 | AI Summarizer | google/gemini-2.5-flash | Categorizes, summarizes, and cites all results |
 
 ---
@@ -260,7 +255,8 @@ web-research-hub/
 │   │   ├── planner.py
 │   │   └── summarizer.py
 │   ├── tools/
-│   │   └── exa_search.py       pure async Exa call
+│   │   └── mcp_client.py       MCP client → Web Research Hub
+│   │                           MCP Server (Streamable HTTP)
 │   ├── models/
 │   │   └── schemas.py
 │   ├── session_store.py
@@ -292,7 +288,7 @@ python -m venv .venv && source .venv/bin/activate
 
 pip install -r requirements.txt
 cp ../.env.example .env
-# Add your OPENROUTER_API_KEY and EXA_API_KEY to .env
+# Add your OPENROUTER_API_KEY, EXA_API_KEY, and MCP_SERVER_URL
 
 uvicorn main:app --reload
 ```
@@ -321,7 +317,7 @@ Frontend runs at `http://localhost:3000`
 | Variable | Required | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | ✅ | OpenRouter API key for all LLM calls |
-| `EXA_API_KEY` | ✅ | Exa AI API key for web search |
+| `EXA_API_KEY` | ✅ | Exa AI API key — passed to the MCP Server |
 | `MCP_SERVER_URL` | ✅ | URL of the Web Research Hub MCP Server |
 | `CORS_ORIGIN_REGEX` | optional | Default: `https://.*\.vercel\.app` |
 
@@ -339,7 +335,8 @@ Frontend runs at `http://localhost:3000`
 
 1. New project → Deploy from GitHub repo
 2. Set Root Directory: `backend`
-3. Add `OPENROUTER_API_KEY` and `EXA_API_KEY` environment variables
+3. Add environment variables:
+   `OPENROUTER_API_KEY`, `EXA_API_KEY`, `MCP_SERVER_URL`
 4. Procfile already configured:
 ```
 web: uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -353,8 +350,7 @@ web: uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 NEXT_PUBLIC_API_URL = https://your-railway-url.up.railway.app
 ```
-⚠️ **Critical:** Do NOT mark `NEXT_PUBLIC_API_URL` as Sensitive —
-this prevents Next.js from baking the value into the build bundle.
+⚠️ **Critical:** Do NOT mark `NEXT_PUBLIC_API_URL` as Sensitive.
 
 3. Deploy
 
@@ -364,8 +360,7 @@ this prevents Next.js from baking the value into the build bundle.
 
 **CORS configuration**
 The backend uses `allow_origin_regex` to whitelist all
-`*.vercel.app` domains automatically — no manual updates
-needed when Vercel generates new preview URLs.
+`*.vercel.app` domains automatically.
 
 **NEXT_PUBLIC_ variables**
 Baked into the JavaScript bundle at build time. If marked
@@ -379,8 +374,7 @@ build step and requests will fail.
 **Query:** "What are pros and cons of token usage and pricing for companies CapEx?"
 
 Generated during the original n8n prototype phase. The system
-planned 2 subtasks covering token economics and infrastructure
-capital expenditure, searched both via Exa with a date-scoped
+planned 2 subtasks, searched both via Exa with a date-scoped
 window, and returned a categorized report covering:
 
 - AI Token Cost Benchmarks and Spending Patterns
@@ -389,10 +383,8 @@ window, and returned a categorized report covering:
 - AI Tokens in Decentralized Systems
 - Capital Expenditure (CapEx) Trends in AI Infrastructure
 
-Each section cites named sources (Bain & Company, Thoughtworks,
-MetricDuck, Platformonomics, Dell'Oro Group) with figures pulled
-directly from the search results — not generated from model
-memory.
+Each section cites named sources with figures pulled directly
+from the search results — not generated from model memory.
 
 Full example report: [examples/capex_token_usage_report.pdf](examples/capex_token_usage_report.pdf)
 
@@ -401,9 +393,8 @@ Full example report: [examples/capex_token_usage_report.pdf](examples/capex_toke
 ## Known Limitations
 
 **No source credibility weighting**
-All sources returned by Exa are treated equally in the
-synthesis step — there's no scoring that favors primary or
-academic sources over secondary commentary.
+All sources returned by Exa are treated equally — there's no
+scoring that favors primary sources over secondary commentary.
 
 **No document upload / vector search**
 The current pipeline is web-search only via Exa. There is no
@@ -419,17 +410,13 @@ underlying model is unavailable.
 ## Roadmap
 
 - [ ] Source credibility weighting in the synthesis step
-- [ ] Document upload + vector search (ChromaDB), so research
-      can draw on both live web results and uploaded documents
-- [ ] MCP client integration — call the existing Pinecone
-      Agentic Search MCP Server as an additional tool for
-      source_type: "academic" subtasks, pulling from the
-      embedded ArXiv research corpus alongside live web search
-- [ ] Academic-specific search APIs (arXiv, Semantic Scholar)
-- [ ] Real-time streaming token output from the Summarizer,
-      rather than waiting for the full report to complete
-- [ ] Persistent, database-backed session storage — current
-      sessions are in-memory and reset on backend restart
+- [ ] Document upload + vector search (ChromaDB) — draw on
+      both live web results and uploaded documents
+- [ ] Academic search — add a dedicated academic source type
+      routing subtasks to an arXiv/Semantic Scholar API,
+      exposed as an additional tool in the MCP Server
+- [ ] Real-time streaming token output from the Summarizer
+- [ ] Persistent, database-backed session storage
 
 ---
 
@@ -440,19 +427,17 @@ Originally built as part of DAIR.AI's "Building Agentic Apps
 with Replit Agent and n8n" course, combining a Replit Agent-
 generated full-stack frontend with an n8n-hosted, three-agent
 hierarchical research pipeline. The n8n workflow files are
-preserved in the `workflow/` folder, exported directly from the
-working production workflow prior to the prototype being retired.
+preserved in the `workflow/` folder.
 
 **Phase 2 — Standalone rebuild**
 Rebuilt as a direct FastAPI + Next.js application, removing the
 n8n runtime dependency entirely while preserving the same
 three-agent architecture, system prompts, and routing logic.
-This phase added the Search Depth Toggle, live Source List
-Panel, real-time progress streaming, multi-turn sessions, and
-document export — closing every gap identified in Phase 1's
-Known Limitations.
+Added the Search Depth Toggle, live Source List Panel, real-time
+progress streaming, multi-turn sessions, and document export —
+closing every gap identified in Phase 1's Known Limitations.
 
-**Phase 3 — MCP Integration (current)**
+**Phase 3 — MCP integration (current)**
 Introduced the Web Research Hub MCP Server as the tool layer,
 replacing direct Exa API calls in the backend. All web search
 and export operations now route through the MCP server via
@@ -478,8 +463,8 @@ by any MCP-compatible client.
 
 Paul Orlando
 Creative Technologist | AI Agent Developer | Data Analytics
-🌐 [paulforlando.com](https://www.paulforlando.com)
-💼 [LinkedIn](https://www.linkedin.com/in/paul-orlando-7841b5154)
+🌐 [paulforlando.com](https://www.paulforlando.com) &nbsp;|&nbsp;
+💼 [LinkedIn](https://www.linkedin.com/in/paul-orlando-7841b5154) &nbsp;|&nbsp;
 🐙 [GitHub](https://github.com/Paul-Orlando)
 
 ---
