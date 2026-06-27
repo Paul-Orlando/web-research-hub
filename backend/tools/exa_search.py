@@ -40,6 +40,8 @@ async def exa_search(
             },
         }
 
+        print(f"[exa_search] MCP request body: {json.dumps(payload)}")
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{MCP_SERVER_URL}/mcp",
