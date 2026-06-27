@@ -44,7 +44,10 @@ async def exa_search(
             response = await client.post(
                 f"{MCP_SERVER_URL}/mcp",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                },
             )
             response.raise_for_status()
             data = response.json()
