@@ -18,21 +18,29 @@ function HistoryEntry({ item, defaultOpen }: { item: HistoryItem; defaultOpen: b
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
+    <div className="rounded-lg border dark:border-white/5 border-border overflow-hidden">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-4 py-3 bg-muted/40 hover:bg-muted/60 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-4 py-2.5 dark:bg-white/[0.02] bg-muted/40 hover:dark:bg-white/[0.04] hover:bg-muted/60 transition-colors text-left"
       >
         {open ? (
-          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+          <ChevronDown className="h-3.5 w-3.5 dark:text-white/25 text-muted-foreground shrink-0" />
         ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          <ChevronRight className="h-3.5 w-3.5 dark:text-white/25 text-muted-foreground shrink-0" />
         )}
-        <span className="text-sm font-medium truncate">{item.query}</span>
+        <span className="font-mono text-[10px] dark:text-cyan-500/50 text-cyan-600/70 shrink-0 tracking-widest uppercase">
+          Q
+        </span>
+        <span className="text-xs dark:text-white/60 text-slate-600 truncate flex-1">
+          {item.query}
+        </span>
+        <span className="font-mono text-[10px] dark:text-white/20 text-slate-400 shrink-0 ml-1">
+          Earlier
+        </span>
       </button>
 
       {open && (
-        <div className="px-6 py-4 prose prose-sm dark:prose-invert max-w-none border-t border-border">
+        <div className="px-6 py-4 prose prose-sm dark:prose-invert max-w-none border-t dark:border-white/5 border-border">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -61,11 +69,19 @@ export function ConversationHistory({ items }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* Divider */}
+      <div className="flex items-center gap-3">
+        <div className="h-px flex-1 dark:bg-white/5 bg-border" />
+        <span className="font-mono text-[10px] dark:text-white/25 text-slate-400 tracking-[0.2em] uppercase">
+          Prior Research
+        </span>
+        <div className="h-px flex-1 dark:bg-white/5 bg-border" />
+      </div>
+
       {items.map((item, i) => (
         <HistoryEntry
           key={i}
           item={item}
-          // Most recent prior report open by default, older ones collapsed
           defaultOpen={i === items.length - 1}
         />
       ))}

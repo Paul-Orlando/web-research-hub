@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, KeyboardEvent } from "react";
-import { Button } from "@/components/ui/button";
 
 interface Props {
   onSearch: (query: string) => void;
@@ -33,15 +32,15 @@ export function SearchBar({ onSearch, disabled }: Props) {
         disabled={disabled}
         placeholder="What would you like to research today?"
         rows={2}
-        className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 min-h-[56px]"
+        className="flex-1 resize-none rounded-lg border dark:border-white/8 border-slate-200 dark:bg-[#0d1428] bg-white px-4 py-3 text-sm dark:text-white text-slate-800 shadow-sm placeholder:dark:text-white/25 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 dark:focus-visible:ring-cyan-400/60 disabled:opacity-50 min-h-[64px] transition-shadow duration-200"
       />
-      <Button
+      <button
         onClick={submit}
         disabled={disabled}
-        className="h-[56px] px-5 shrink-0"
+        className="h-[64px] px-6 shrink-0 rounded-lg bg-blue-500 hover:bg-blue-400 text-white font-mono text-sm tracking-wide shadow-md hover:shadow-[0_0_18px_4px_rgb(59_130_246/0.4)] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
       >
         Research
-      </Button>
+      </button>
     </div>
   );
 }

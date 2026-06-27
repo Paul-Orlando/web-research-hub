@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { DepthMode } from "@/lib/api";
 
 interface Props {
@@ -17,21 +16,31 @@ const MODES: { value: DepthMode; label: string; description: string }[] = [
 
 export function DepthToggle({ value, onChange, disabled }: Props) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-sm text-muted-foreground mr-1">Depth:</span>
-      {MODES.map((m) => (
-        <Button
-          key={m.value}
-          size="sm"
-          variant={value === m.value ? "default" : "outline"}
-          onClick={() => onChange(m.value)}
-          disabled={disabled}
-          className="text-xs h-7 px-3"
-          title={m.description}
-        >
-          {m.label}
-        </Button>
-      ))}
+    <div className="flex items-center gap-2">
+      <span className="font-mono text-[11px] tracking-widest uppercase dark:text-muted-foreground text-slate-500">
+        Depth
+      </span>
+      <div className="flex items-center rounded-full dark:bg-white/5 bg-slate-100 p-0.5 gap-0.5">
+        {MODES.map((m) => {
+          const active = value === m.value;
+          return (
+            <button
+              key={m.value}
+              onClick={() => !disabled && onChange(m.value)}
+              disabled={disabled}
+              title={m.description}
+              className={[
+                "font-mono text-[11px] px-3 py-1 rounded-full transition-all duration-200 disabled:opacity-40 cursor-pointer",
+                active
+                  ? "bg-primary text-primary-foreground shadow-[0_0_10px_2px_rgb(59_130_246/0.35)]"
+                  : "bg-transparent dark:text-muted-foreground text-slate-500 hover:dark:text-foreground hover:text-slate-700",
+              ].join(" ")}
+            >
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

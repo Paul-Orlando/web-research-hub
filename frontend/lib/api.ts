@@ -1,5 +1,4 @@
-const BASE =
-  process.env.NEXT_PUBLIC_API_URL || "https://your-railway-app.up.railway.app";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export type DepthMode = "quick" | "standard" | "deep";
 
@@ -67,7 +66,7 @@ export async function startResearch(
   callbacks: SSECallbacks,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${BASE}/research`, {
+  const response = await fetch(`${BASE_URL}/research`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -147,13 +146,13 @@ export async function startResearch(
 // ── REST helpers ──────────────────────────────────────────────────────────────
 
 export async function getSources(sessionId: string): Promise<SourceEntry[]> {
-  const res = await fetch(`${BASE}/session/${sessionId}/sources`);
+  const res = await fetch(`${BASE_URL}/session/${sessionId}/sources`);
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function getHistory(sessionId: string): Promise<HistoryEntry[]> {
-  const res = await fetch(`${BASE}/session/${sessionId}/history`);
+  const res = await fetch(`${BASE_URL}/session/${sessionId}/history`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -162,9 +161,9 @@ export function downloadReport(
   sessionId: string,
   format: "md" | "pdf" | "docx",
 ): void {
-  window.open(`${BASE}/download-report/${sessionId}/${format}`, "_blank");
+  window.open(`${BASE_URL}/download-report/${sessionId}/${format}`, "_blank");
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  await fetch(`${BASE}/session/${sessionId}`, { method: "DELETE" });
+  await fetch(`${BASE_URL}/session/${sessionId}`, { method: "DELETE" });
 }
