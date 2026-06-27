@@ -5,6 +5,7 @@ from typing import Optional
 import httpx
 
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
+MCP_API_KEY = os.getenv("MCP_API_KEY")
 
 _FALLBACK = lambda query: {
     "query": query,
@@ -56,6 +57,7 @@ async def exa_search(
                 headers={
                     "Content-Type": "application/json",
                     "Accept": "application/json, text/event-stream",
+                    "X-API-Key": MCP_API_KEY,
                 },
             )
             init_response.raise_for_status()
@@ -64,6 +66,7 @@ async def exa_search(
             tool_headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
+                "X-API-Key": MCP_API_KEY,
             }
             if session_id:
                 tool_headers["mcp-session-id"] = session_id

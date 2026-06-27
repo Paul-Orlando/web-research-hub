@@ -140,6 +140,7 @@ async def _mcp_export_report(content: str, fmt: str, title: str) -> bytes:
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
+                "X-API-Key": os.getenv("MCP_API_KEY"),
             },
         )
         response.raise_for_status()
