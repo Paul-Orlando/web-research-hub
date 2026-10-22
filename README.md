@@ -253,24 +253,29 @@ web-research-hub/
 │   ├── main.py                 FastAPI app, CORS, SSE routes
 │   ├── agents/
 │   │   ├── planner.py
+│   │   ├── orchestrator.py
 │   │   └── summarizer.py
 │   ├── tools/
-│   │   └── mcp_client.py       MCP client → Web Research Hub
+│   │   └── exa_search.py       MCP client → Web Research Hub
 │   │                           MCP Server (Streamable HTTP)
 │   ├── models/
 │   │   └── schemas.py
 │   ├── session_store.py
 │   ├── requirements.txt
-│   └── Procfile
+│   ├── Procfile
+│   └── .env.example
 │
-├── workflow/                   Original n8n prototype (archived)
+├── workflows/                  Original n8n prototype (archived)
 │   ├── search_orchestrator.json
 │   └── search_worker.json
 │
 ├── examples/                   Sample output
 │   ├── README.md
-│   └── capex_token_usage_report.pdf
+│   ├── search_output.pdf       CapEx / token usage report
+│   ├── example_report.pdf      OpenAI news report (also .md, .docx)
+│   └── example_01.jpg, example_02.jpg
 │
+├── .env.example
 ├── .gitignore
 └── README.md
 ```
@@ -287,9 +292,8 @@ python -m venv .venv && source .venv/bin/activate
 # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
-cp ../.env.example .env
-# Add your OPENROUTER_API_KEY, EXA_API_KEY, MCP_SERVER_URL,
-# and MCP_API_KEY to .env
+cp .env.example .env
+# Add your OPENROUTER_API_KEY, MCP_SERVER_URL and MCP_API_KEY to .env
 
 uvicorn main:app --reload
 ```
@@ -300,8 +304,7 @@ Backend runs at `http://localhost:8000`
 
 ```bash
 cd frontend
-cp .env.local.example .env.local
-# set NEXT_PUBLIC_API_URL to http://localhost:8000 for local dev
+echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
 
 npm install
 npm run dev
@@ -318,7 +321,6 @@ Frontend runs at `http://localhost:3000`
 | Variable | Required | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | ✅ | OpenRouter API key for all LLM calls |
-| `EXA_API_KEY` | ✅ | Exa AI API key — passed to the MCP Server |
 | `MCP_SERVER_URL` | ✅ | URL of the Web Research Hub MCP Server |
 | `MCP_API_KEY` | ✅ | Auth key for the MCP Server — must match the key set on the MCP server |
 | `CORS_ORIGIN_REGEX` | optional | Default: `https://.*\.vercel\.app` |
@@ -338,7 +340,9 @@ Frontend runs at `http://localhost:3000`
 1. New project → Deploy from GitHub repo
 2. Set Root Directory: `backend`
 3. Add environment variables:
-   `OPENROUTER_API_KEY`, `EXA_API_KEY`, `MCP_SERVER_URL`, `MCP_API_KEY`
+   `OPENROUTER_API_KEY`, `MCP_SERVER_URL`, `MCP_API_KEY`
+
+   `EXA_API_KEY` is set on the MCP server, not here.
 4. Procfile already configured:
 ```
 web: uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -394,7 +398,7 @@ window, and returned a categorized report covering:
 Each section cites named sources with figures pulled directly
 from the search results — not generated from model memory.
 
-Full example report: [examples/capex_token_usage_report.pdf](examples/capex_token_usage_report.pdf)
+Full example report: [examples/search_output.pdf](examples/search_output.pdf)
 
 ---
 
@@ -416,7 +420,9 @@ underlying model is unavailable.
 **MCP Server rate limited to 10 requests per IP per hour**
 One search generates approximately 4-5 MCP calls internally
 (MCP handshake + one tool call per subtask), allowing roughly
-2 complete Quick searches per hour on the demo server. For
+2 complete Quick searches per hour on the demo server. Because
+every call comes from the backend, this limit is shared by all
+visitors to the live demo rather than applied per visitor. For
 unrestricted use, self-host the MCP server with your own API
 keys — see
 [web-research-hub-mcp-server](https://github.com/Paul-Orlando/web-research-hub-mcp-server)
@@ -444,7 +450,7 @@ Originally built as part of DAIR.AI's "Building Agentic Apps
 with Replit Agent and n8n" course, combining a Replit Agent-
 generated full-stack frontend with an n8n-hosted, three-agent
 hierarchical research pipeline. The n8n workflow files are
-preserved in the `workflow/` folder.
+preserved in the `workflows/` folder.
 
 **Phase 2 — Standalone rebuild**
 Rebuilt as a direct FastAPI + Next.js application, removing the
@@ -472,7 +478,6 @@ the MCP server.
 | [web-research-hub-mcp-server](https://github.com/Paul-Orlando/web-research-hub-mcp-server) | MCP Server | FastAPI + FastMCP |
 | [ai-n8n-deep-research-agent](https://github.com/Paul-Orlando/ai-n8n-deep-research-agent) | Hierarchical Multi-Agent | n8n + Exa + Google Sheets |
 | [ai-n8n-document-generator](https://github.com/Paul-Orlando/ai-n8n-document-generator) | LLM Chain + Quality Gate | n8n + OpenRouter |
-| [deep-research-agent-app](https://github.com/Paul-Orlando/deep-research-agent-app) | Full-Stack Research App | Claude Code + Next.js + Exa |
 | [ai-agent-team-supervisor-app](https://github.com/Paul-Orlando/ai-agent-team-supervisor-app) | Supervisor Pattern | OpenAI Agents SDK |
 | [pinecone-mcp-server](https://github.com/Paul-Orlando/pinecone-mcp-server) | Custom MCP Server | Node.js + Pinecone |
 
