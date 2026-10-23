@@ -142,12 +142,13 @@ FastAPI Orchestrator
 - **MCP tool layer** — search and export operations route through
   the Web Research Hub MCP Server, making the tool layer
   independently reusable by any MCP-compatible client
-- **Citation guard** — the Summarizer cites numbered sources and
+- **Verified citations** — the Summarizer cites numbered sources and
   the server maps them to real links, so no report shows a URL the
   search step didn't return; invalid citations are retried, then
   removed
-- **Measured, not assumed** — a 45-run research quality eval with
-  an LLM judge, plus a mocked pytest suite and GitHub Actions CI
+- **Measured, not assumed** — three 45-run research quality evals
+  with an LLM judge (no guard → guard v2 → ID citations), plus a
+  mocked pytest suite and GitHub Actions CI
 
 ---
 
@@ -203,7 +204,8 @@ is removed and the claim is marked (unverified). The low-coverage
 retry always lets the model drop unsupported claims: asking only
 for more citations made it invent sources. With IDs the eval saw
 no invented citations in 45 first drafts and no retries, and
-queries got faster (19.5 s vs 26.6 s) and 10% cheaper.
+queries got faster (19.5 s vs 26.6 s) and 10% cheaper than with
+guard v2, and 7% cheaper than with no guard at all.
 
 **Citations render as visible domains in exported documents**
 Exports render citations as `claim text (domain.com)` so the
@@ -231,7 +233,7 @@ MCP server is a separate deployable service at
 | Streaming | SSE (Server-Sent Events) |
 | Export | fpdf2 (PDF), python-docx (DOCX) |
 | Testing | pytest (all external calls mocked) + GitHub Actions CI |
-| Evaluation | 45-run eval, GPT-4.1 mini as judge |
+| Evaluation | 45 runs per configuration, 3 configurations compared, GPT-4.1 mini as judge |
 | Frontend Hosting | Vercel |
 | Backend Hosting | Railway |
 | Built With | Claude Code |
@@ -244,7 +246,8 @@ MCP server is a separate deployable service at
 |---|---|---|
 | Search Planner | google/gemini-2.5-flash | Decomposes query into N subtasks based on search depth |
 | Search Orchestrator | — (pure Python) | Routes each subtask to the MCP Server via Streamable HTTP |
-| AI Summarizer | google/gemini-2.5-flash | Categorizes, summarizes, and cites all results |
+| AI Summarizer | google/gemini-2.5-flash | Categorizes and summarizes; cites numbered source IDs, never URLs |
+| Citation Guard | — (pure Python) | Maps source IDs to real links; retries or removes invalid citations |
 
 ---
 
@@ -363,7 +366,9 @@ Frontend runs at `http://localhost:3000`
 ## Testing
 
 The backend has a pytest suite in `backend/tests/` covering the planner,
-orchestrator, MCP search client, summarizer, and API endpoints. All
+orchestrator, MCP search client, summarizer, citation guard (ID mapping,
+invalid IDs, raw-URL backstop, retry notes), exports, eval metrics, and
+API endpoints. All
 external calls (OpenRouter, MCP server) are mocked, so no API keys or
 network access are needed.
 
@@ -543,6 +548,9 @@ for deployment instructions.
 
 ## Roadmap
 
+- [ ] Recover claims dropped by the "leave it out" rule on comparison
+      questions (`raft`, `heat_pump_vs_furnace` came out 24–32%
+      shorter), e.g. a targeted follow-up search for unsupported claims
 - [ ] Source credibility weighting in the synthesis step
 - [ ] Document upload + vector search (ChromaDB) — draw on
       both live web results and uploaded documents
@@ -590,7 +598,10 @@ was added. The eval also caught bugs in the guard's first version
 and re-measured. The invented URLs turned out to be mis-copies of
 real results, so the Summarizer now cites numbered source IDs and
 the guard maps them to links: citation coverage rose from 72% to
-84% (CRISPR from 56% to 80%) with no invented citations.
+84% (CRISPR from 56% to 80%) with no invented citations and no
+retries. The eval also showed that a retry asking only for more
+citations made the model invent sources, so every retry now allows
+dropping unsupported claims instead.
 
 ---
 
