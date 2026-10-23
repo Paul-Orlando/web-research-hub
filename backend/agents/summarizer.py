@@ -3,6 +3,7 @@ from typing import Optional
 
 import httpx
 
+from agents.citation_guard import number_sources, source_domain
 from models.schemas import SearchResult
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
@@ -13,8 +14,23 @@ Your task is to create a one-page report of the provided search results. I want 
 
 - First, categorize the search results and use appropriate headers
 - Then summarize the search results and add them as a list to the corresponding categories.
-- Make sure to include the citation using this format [source](url)\
+- Cite every factual claim with the ID of the numbered source that supports it, in square brackets: [S1]. \
+If several sources support a claim, cite each one: [S1][S4].
+- Use only the numbered sources. If no listed source supports a claim, leave the claim out rather than \
+stating it from memory.
+- Never write URLs or links.\
 """
+
+
+def _format_source(source_id: str, group: list[SearchResult]) -> str:
+    first = group[0]
+    domain = source_domain(first.source)
+    lines = [f"[{source_id}] {first.title or domain}", f"Domain: {domain}"]
+    if first.publish_date:
+        lines.append(f"Date: {first.publish_date}")
+    # The same page can come back from several searches, each with its own summary.
+    lines += [f"Summary: {r.search_result}" for r in group if r.search_result]
+    return "\n".join(lines)
 
 
 async def run_summarizer(
@@ -25,16 +41,16 @@ async def run_summarizer(
 ) -> str:
     api_key = os.environ["OPENROUTER_API_KEY"]
 
+    # Sources are numbered and sent without URLs: the model cites IDs, and the
+    # citation guard maps them back to links.
     results_text = "\n\n".join(
-        f"Query: {r.query}\nSource: {r.source}\nDate: {r.publish_date}\nContent: {r.search_result}"
-        for r in results
-        if r.search_result and r.search_result != "No results were found for this search query within the specified date range."
+        _format_source(source_id, group) for source_id, group in number_sources(results).items()
     )
 
     if not results_text:
         results_text = "No search results were returned."
 
-    user_message = f"Research query: {query}\n\nSearch results:\n\n{results_text}"
+    user_message = f"Research query: {query}\n\nSources:\n\n{results_text}"
 
     if history:
         context = "\n".join(f"Previous question: {h['query']}" for h in history[-3:])

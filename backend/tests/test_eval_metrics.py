@@ -88,3 +88,40 @@ def test_summarize_pools_rates_across_runs():
     assert s["overall"]["runs"] == 4 and s["overall"]["errors"] == 1
     assert s["overall"]["coverage"] == 5 / 12
     assert "**Overall**" in report.table(s)
+    assert s["overall"]["first_draft_invented"] == 1 and s["overall"]["first_draft_invented_runs"] == 1
+
+
+def test_citation_failures_lists_unknown_ids_and_closest_source_per_draft():
+    from agents.citation_guard import number_sources
+    from models.schemas import SearchResult
+
+    sources = number_sources([SearchResult(**result("https://en.wikipedia.org/wiki/CRISPR")), SearchResult(**result("https://ft.com/a"))])
+    drafts = [
+        "- Claim [S1].\n- Claim [S7].\n- Claim [wiki](https://en.wikipedia.com/wiki/CRISPR).\n",
+        "- Claim [S1].\n- Claim https://unrelated.example/zzz.\n",
+    ]
+
+    failures = metrics.citation_failures(drafts, sources)
+
+    assert failures[0] == {"draft": "first", "kind": "id", "citation": "S7"}
+    assert failures[1]["citation"] == "https://en.wikipedia.com/wiki/CRISPR"
+    assert failures[1]["closest_source"] == "https://en.wikipedia.org/wiki/CRISPR"
+    assert failures[1]["similarity"] > 0.9
+    assert failures[2]["draft"] == "retry" and failures[2]["similarity"] < 0.6
+    assert metrics.citation_failures(["- Clean [S2]."], sources) == []
+
+
+def test_comparison_tables_have_one_column_per_config():
+    def summary(coverage, unverified):
+        overall = {"runs": 3, "coverage": coverage, "invented": 0.0, "invented_count": 0, "supported": 1.0,
+                   "partial": 0.0, "judged": 5, "unverified": unverified, "latency": 20.0, "cost": 0.03,
+                   "first_draft_invented": 1, "first_draft_invented_runs": 1}
+        return {"rows": [{"id": "raft", **overall}], "overall": overall}
+
+    configs = [("No guard", summary(0.5, 0)), ("Guard v2", summary(0.6, 2)), ("ID citations", summary(0.7, 0))]
+
+    overall = report.comparison_table(configs)
+    assert "| Metric | No guard | Guard v2 | ID citations |" in overall
+    assert "| Citation coverage | 50% | 60% | 70% |" in overall
+    assert "| Unverified claims (citation removed) | 0 | 2 | 0 |" in overall
+    assert "| `raft` | 50% → 60% → 70% |" in report.question_comparison_table(configs)

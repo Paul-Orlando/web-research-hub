@@ -9,6 +9,11 @@ LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)")
 _BARE_URL_RE = re.compile(r"https?://[^\s<>\[\]\"'`]+")
 _BULLET_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\[\"(])")
+# Source-ID citations: [S1], [S1, S4], and adjacent runs like [S1][S4]. A run
+# followed by "(" is a markdown link label, not an ID citation.
+_ID_TOKEN = r"\[S\d+(?:\s*[,;]\s*S\d+)*\]"
+_ID_RUN_RE = re.compile(rf"{_ID_TOKEN}(?:\s*{_ID_TOKEN})*(?!\()")
+_ID_RE = re.compile(r"S\d+")
 MIN_COVERAGE = 0.5
 
 Summarize = Callable[..., Awaitable[str]]
@@ -21,6 +26,55 @@ def normalize_url(url: str) -> str:
     path = parsed.path.rstrip("/")
     query = urlencode([(k, v) for k, v in parse_qsl(parsed.query) if not k.lower().startswith("utm_")])
     return host + path + (f"?{query}" if query else "")
+
+
+def source_domain(url: str) -> str:
+    return urlparse(url).netloc.lower().removeprefix("www.")
+
+
+def number_sources(results: list[SearchResult]) -> dict[str, list[SearchResult]]:
+    """Source IDs S1, S2, ... in order of first appearance.
+
+    Results without a URL (search fallbacks) get no ID; results sharing a URL
+    share one ID. The summarizer prompt and the guard both use this numbering.
+    """
+    by_url: dict[str, list[SearchResult]] = {}
+    for r in results:
+        if r.source:
+            by_url.setdefault(normalize_url(r.source), []).append(r)
+    return {f"S{i}": group for i, group in enumerate(by_url.values(), 1)}
+
+
+def cited_ids(markdown: str) -> list[str]:
+    """Unique source IDs cited, in order of first appearance."""
+    return list(dict.fromkeys(i for run in _ID_RUN_RE.findall(markdown) for i in _ID_RE.findall(run)))
+
+
+def find_invalid_ids(markdown: str, sources: dict[str, list[SearchResult]]) -> list[str]:
+    return [i for i in cited_ids(markdown) if i not in sources]
+
+
+def resolve_ids(markdown: str, sources: dict[str, list[SearchResult]]) -> tuple[str, int]:
+    """Replace source-ID citations with [domain](url) links. Returns (markdown, unknown IDs removed).
+
+    An unknown ID becomes '(unverified)', once per citation run.
+    """
+    removed = 0
+
+    def replace(m: re.Match) -> str:
+        nonlocal removed
+        parts = []
+        for source_id in dict.fromkeys(_ID_RE.findall(m.group(0))):
+            if source_id in sources:
+                url = sources[source_id][0].source
+                parts.append(f"[{source_domain(url)}]({url})")
+            else:
+                removed += 1
+                if "(unverified)" not in parts:
+                    parts.append("(unverified)")
+        return " ".join(parts)
+
+    return _ID_RUN_RE.sub(replace, markdown), removed
 
 
 def cited_urls(markdown: str) -> list[str]:
@@ -124,32 +178,31 @@ def strip_invented(markdown: str, allowed: set[str]) -> tuple[str, int]:
     return re.sub(r"\x00(\d+)\x00", lambda m: kept[int(m.group(1))], text), removed
 
 
-_FORMAT_RULE = (
-    "Write every citation as a markdown link in exactly this form: [source](URL). "
-    "Never write a bare URL, and never put URLs in square brackets without the (URL) part."
+_CITE_RULE = (
+    "Cite sources only by their ID in square brackets, e.g. [S1], or [S1][S4] for several sources. "
+    "Never write URLs or links."
 )
 
 
-def correction_note(allowed_urls: list[str]) -> str:
-    if not allowed_urls:
+def correction_note(source_count: int, invalid_ids: list[str] = ()) -> str:
+    """Note for citations that don't point at a listed source: unknown IDs or raw URLs."""
+    if not source_count:
         return (
-            "CORRECTION: Your previous report cited URLs that were not in the search results. "
-            "No source URLs are available, so do not include any URLs or links."
+            "CORRECTION: Your previous report cited sources, but no sources are available. Do not cite source "
+            "IDs or write URLs, and do not state facts from memory; say that no sources were found."
         )
+    unknown = f" ({', '.join(invalid_ids)})" if invalid_ids else ""
     return (
-        "CORRECTION: Your previous report cited URLs that were not in the search results. "
-        f"{_FORMAT_RULE} Cite ONLY the URLs below (copy each URL exactly), and drop any claim you cannot "
-        "support with them:\n"
-        + "\n".join(f"- {u}" for u in allowed_urls)
+        f"CORRECTION: Your previous report cited sources that are not in the list{unknown}. "
+        f"Only S1 to S{source_count} exist. {_CITE_RULE} Remove claims no listed source supports."
     )
 
 
-def coverage_note(allowed_urls: list[str]) -> str:
+def coverage_note() -> str:
+    # Asking for more citations without allowing removal made the model invent sources (eval, 2026-10-23).
     return (
-        "CORRECTION: Your previous report left factual claims without citations. Every factual claim "
-        "(each bullet and each sentence that states a fact) must include a citation. "
-        f"{_FORMAT_RULE} Use only the URLs below, and drop any claim you cannot cite:\n"
-        + "\n".join(f"- {u}" for u in allowed_urls)
+        "CORRECTION: Your previous report left factual claims without a source ID. Cite a source ID for each "
+        f"claim, and remove claims no listed source supports. {_CITE_RULE}"
     )
 
 
@@ -159,28 +212,32 @@ async def summarize_with_guard(
     history: list[dict],
     summarize: Summarize,
 ) -> tuple[str, dict]:
-    """Run the summarizer and ensure every citation points at a returned source.
+    """Run the summarizer and turn its source-ID citations into links to returned sources.
 
-    At most one retry, with a correction note for invented citations and/or
-    low citation coverage (zero citations, or under MIN_COVERAGE, when sources
-    exist). If any visible URL is still invented after the retry, it is
-    removed. Never returns an invented URL.
+    The summarizer cites [S1], [S2], ... (see number_sources); each known ID
+    becomes a [domain](url) link. Unknown IDs and raw URLs not among the
+    sources count as invented. At most one retry, with a correction note for
+    invented citations and/or low citation coverage (zero citations, or under
+    MIN_COVERAGE, when sources exist). Anything still invented after the retry
+    is removed and marked '(unverified)'. Never returns an invented URL.
     """
-    allowed_urls = list(dict.fromkeys(r.source for r in results if r.source))
-    allowed = {normalize_url(u) for u in allowed_urls}
+    sources = number_sources(results)
+    allowed = {normalize_url(group[0].source) for group in sources.values()}
 
-    report = await summarize(results, query, history)
-    invented = find_invented(report, allowed)
+    draft = await summarize(results, query, history)
+    invalid = find_invalid_ids(draft, sources)
+    invented = find_invented(draft, allowed)
+    report, _ = resolve_ids(draft, sources)
     coverage = citation_coverage(report)
-    low_coverage = bool(allowed_urls) and (not cited_urls(report) or coverage < MIN_COVERAGE)
+    low_coverage = bool(sources) and (not cited_urls(report) or coverage < MIN_COVERAGE)
     stats = {
-        "citations_checked": len(visible_urls(report)),
-        "invented_before_retry": len(invented),
+        "citations_checked": len(cited_ids(draft)) + len(visible_urls(draft)),
+        "invented_before_retry": len(invalid) + len(invented),
         "retried": False,
         "low_coverage_retry": False,
         "removed": 0,
     }
-    if not invented and not low_coverage:
+    if not invalid and not invented and not low_coverage:
         print(
             f"[citation_guard] {stats['citations_checked']} citations checked, all in sources, "
             f"coverage {coverage:.0%}",
@@ -189,27 +246,28 @@ async def summarize_with_guard(
         return report, stats
 
     notes = []
-    if invented:
-        notes.append(correction_note(allowed_urls))
+    if invalid or invented:
+        notes.append(correction_note(len(sources), invalid))
     if low_coverage:
-        notes.append(coverage_note(allowed_urls))
+        notes.append(coverage_note())
         stats["low_coverage_retry"] = True
     print(
-        f"[citation_guard] {len(invented)} of {stats['citations_checked']} citations not in sources, "
-        f"coverage {coverage:.0%}; retrying",
+        f"[citation_guard] {stats['invented_before_retry']} of {stats['citations_checked']} citations not in "
+        f"sources, coverage {coverage:.0%}; retrying",
         flush=True,
     )
     stats["retried"] = True
-    report = await summarize(results, query, history, correction="\n\n".join(notes))
-    stats["citations_checked"] += len(visible_urls(report))
-    invented = find_invented(report, allowed)
-    if not invented:
+    draft = await summarize(results, query, history, correction="\n\n".join(notes))
+    stats["citations_checked"] += len(cited_ids(draft)) + len(visible_urls(draft))
+    report, removed_ids = resolve_ids(draft, sources)
+    report, removed_urls = strip_invented(report, allowed)
+    stats["removed"] = removed_ids + removed_urls
+    if not stats["removed"]:
         print(f"[citation_guard] retry clean, coverage {citation_coverage(report):.0%}", flush=True)
-        return report, stats
-
-    report, stats["removed"] = strip_invented(report, allowed)
-    print(
-        f"[citation_guard] retry still had {len(invented)} invented citations; removed {stats['removed']} URLs",
-        flush=True,
-    )
+    else:
+        print(
+            f"[citation_guard] retry still had invented citations; removed {removed_ids} IDs and "
+            f"{removed_urls} URLs",
+            flush=True,
+        )
     return report, stats

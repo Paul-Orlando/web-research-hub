@@ -1,12 +1,16 @@
 import pytest
 
 from agents.citation_guard import (
+    cited_ids,
     citation_coverage,
     correction_note,
     coverage_note,
+    find_invalid_ids,
     find_invented,
     normalize_url,
+    number_sources,
     report_units,
+    resolve_ids,
     strip_invented,
     summarize_with_guard,
     visible_urls,
@@ -80,7 +84,7 @@ async def test_clean_report_passes_without_retry(capsys):
     assert "2 citations checked, all in sources" in capsys.readouterr().out
 
 
-async def test_invented_citation_triggers_retry_with_allowed_urls():
+async def test_raw_invented_url_triggers_retry_with_id_note():
     summarize = FakeSummarizer(INVENTED, CLEAN)
 
     report, stats = await summarize_with_guard(RESULTS, "q", [], summarize)
@@ -88,9 +92,8 @@ async def test_invented_citation_triggers_retry_with_allowed_urls():
     assert report == CLEAN
     assert stats == {"citations_checked": 4, "invented_before_retry": 1, "retried": True, "low_coverage_retry": False, "removed": 0}
     note = summarize.corrections[1]
-    assert URL1 in note and URL2 in note
-    assert "ONLY" in note
-    assert FAKE not in note
+    assert note == correction_note(2)
+    assert "http" not in note  # the retry prompt carries no URLs either
 
 
 async def test_still_invented_after_retry_strips_links():
@@ -112,8 +115,8 @@ async def test_no_sources_means_every_citation_is_invented():
 
     assert "http" not in report
     assert stats["removed"] == 3
-    assert summarize.corrections[1] == correction_note([])
-    assert "do not include any URLs" in summarize.corrections[1]
+    assert summarize.corrections[1] == correction_note(0)
+    assert "no sources are available" in summarize.corrections[1]
 
 
 async def test_logs_counts_only(capsys):
@@ -156,9 +159,7 @@ async def test_low_coverage_triggers_retry_with_citation_note(first):
     assert stats["retried"] is True
     assert stats["low_coverage_retry"] is True
     assert stats["invented_before_retry"] == 0
-    note = summarize.corrections[1]
-    assert note == coverage_note([URL1, URL2])
-    assert "Every factual claim" in note and URL1 in note
+    assert summarize.corrections[1] == coverage_note()
 
 
 async def test_exactly_half_coverage_does_not_retry():
@@ -188,7 +189,7 @@ async def test_invented_and_low_coverage_share_one_retry():
     assert report == CLEAN
     assert len(summarize.corrections) == 2  # one retry, not two
     note = summarize.corrections[1]
-    assert correction_note([URL1, URL2]) in note and coverage_note([URL1, URL2]) in note
+    assert note == correction_note(2) + "\n\n" + coverage_note()
     assert stats == {
         "citations_checked": 3,
         "invented_before_retry": 1,
@@ -258,7 +259,121 @@ async def test_retry_with_bare_invented_urls_is_stripped():
     assert stats["removed"] == 1
 
 
-def test_correction_notes_require_markdown_link_format():
-    for note in (correction_note([URL1]), coverage_note([URL1])):
-        assert "[source](URL)" in note
-        assert "Never write a bare URL" in note
+
+
+# ── source-ID citations ───────────────────────────────────────────────────────
+
+SOURCES = number_sources(RESULTS)
+LINK1, LINK2 = f"[example.com]({URL1})", f"[example.com]({URL2})"
+ID_CLEAN = "## Findings\n- Claim one [S1].\n- Claim two [S2].\n"
+
+
+def test_number_sources_skips_fallbacks_and_shares_ids_for_repeated_urls():
+    repeat = make_result("query a", 1).model_copy(update={"query": "query c", "search_result": "other summary"})
+    sources = number_sources([*RESULTS, repeat])
+    assert list(sources) == ["S1", "S2"]
+    assert [r.search_result for r in sources["S1"]] == ["content for query a #1", "other summary"]
+
+
+def test_ids_map_to_domain_links():
+    report, removed = resolve_ids(ID_CLEAN, SOURCES)
+    assert report == f"## Findings\n- Claim one {LINK1}.\n- Claim two {LINK2}.\n"
+    assert removed == 0
+    assert citation_coverage(report) == 1.0
+
+
+@pytest.mark.parametrize("cite", ["[S1][S2]", "[S1] [S2]", "[S1, S2]", "[S1; S2]", "[S1][S2][S1]"])
+def test_multiple_ids_map_to_one_link_each(cite):
+    report, _ = resolve_ids(f"- Claim {cite}.\n", SOURCES)
+    assert report == f"- Claim {LINK1} {LINK2}.\n"
+    assert cited_ids(f"- Claim {cite}.") == ["S1", "S2"]
+
+
+def test_unknown_id_is_removed_and_marked_unverified():
+    draft = "- Claim one [S1][S9].\n- Claim two [S7].\n- Claim three [S8, S9].\n"
+    assert find_invalid_ids(draft, SOURCES) == ["S9", "S7", "S8"]
+    report, removed = resolve_ids(draft, SOURCES)
+    assert report == f"- Claim one {LINK1} (unverified).\n- Claim two (unverified).\n- Claim three (unverified).\n"
+    assert removed == 4
+
+
+def test_id_used_as_link_label_is_not_an_id_citation():
+    draft = f"- Claim [S1]({URL1}).\n"
+    assert cited_ids(draft) == []
+    assert resolve_ids(draft, SOURCES) == (draft, 0)
+
+
+async def test_id_report_passes_without_retry():
+    summarize = FakeSummarizer(ID_CLEAN)
+
+    report, stats = await summarize_with_guard(RESULTS, "q", [], summarize)
+
+    assert report == f"## Findings\n- Claim one {LINK1}.\n- Claim two {LINK2}.\n"
+    assert summarize.corrections == [None]
+    assert stats == {"citations_checked": 2, "invented_before_retry": 0, "retried": False, "low_coverage_retry": False, "removed": 0}
+
+
+async def test_unknown_id_triggers_retry_naming_it():
+    summarize = FakeSummarizer("- Claim one [S1].\n- Claim two [S5].\n", ID_CLEAN)
+
+    report, stats = await summarize_with_guard(RESULTS, "q", [], summarize)
+
+    assert report == f"## Findings\n- Claim one {LINK1}.\n- Claim two {LINK2}.\n"
+    assert stats["invented_before_retry"] == 1 and stats["retried"] is True and stats["removed"] == 0
+    note = summarize.corrections[1]
+    assert note == correction_note(2, ["S5"])
+    assert "(S5)" in note and "Only S1 to S2 exist" in note
+    assert "remove claims no listed source supports" in note.lower()
+
+
+async def test_unknown_id_after_retry_is_marked_unverified():
+    draft = "- Claim one [S1].\n- Claim two [S5].\n"
+    summarize = FakeSummarizer(draft, draft)
+
+    report, stats = await summarize_with_guard(RESULTS, "q", [], summarize)
+
+    assert report == f"- Claim one {LINK1}.\n- Claim two (unverified).\n"
+    assert len(summarize.corrections) == 2  # exactly one retry
+    assert stats["removed"] == 1
+
+
+async def test_ids_with_no_sources_are_invented():
+    summarize = FakeSummarizer("- Claim [S1].\n", "- Claim [S1].\n")
+
+    report, stats = await summarize_with_guard([fallback_result("q")], "q", [], summarize)
+
+    assert report == "- Claim (unverified).\n"
+    assert summarize.corrections[1] == correction_note(0)
+    assert stats["removed"] == 1
+
+
+async def test_raw_urls_alongside_ids_are_still_checked():
+    """Backstop: a raw invented URL in an ID-cited report is retried, then stripped."""
+    draft = f"- Claim one [S1].\n- Claim two [Made Up]({FAKE}).\n- Claim three {FAKE}.\n"
+    summarize = FakeSummarizer(draft, draft)
+
+    report, stats = await summarize_with_guard(RESULTS, "q", [], summarize)
+
+    assert FAKE not in report
+    assert report == f"- Claim one {LINK1}.\n- Claim two (unverified).\n- Claim three (unverified).\n"
+    assert stats["invented_before_retry"] == 1 and stats["removed"] == 2
+
+
+async def test_low_coverage_counts_resolved_ids_and_note_allows_removal():
+    summarize = FakeSummarizer("- Claim one [S1].\n- Claim two.\n- Claim three.\n", ID_CLEAN)
+
+    _, stats = await summarize_with_guard(RESULTS, "q", [], summarize)
+
+    assert stats["low_coverage_retry"] is True
+    note = summarize.corrections[1]
+    assert note == coverage_note()
+    assert "Cite a source ID for each claim, and remove claims no listed source supports" in note
+
+
+def test_correction_notes_ask_for_ids_never_urls():
+    for note in (correction_note(3), correction_note(3, ["S9"]), coverage_note()):
+        assert "[S1]" in note
+        assert "Never write URLs" in note
+        assert "http" not in note
+    # A coverage retry must always allow removing claims, never only ask for more citations.
+    assert "remove claims" in coverage_note()

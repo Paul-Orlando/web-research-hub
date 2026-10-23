@@ -1,6 +1,8 @@
+import io
 import json
 
 import pytest
+from docx import Document
 from fastapi.testclient import TestClient
 
 import main
@@ -105,7 +107,8 @@ def test_research_streams_expected_events(client, pipeline):
         "guard": {"citations_checked": 2, "invented_before_retry": 1, "retried": True, "low_coverage_retry": False, "removed": 1},
     }
     assert pipeline["corrections"][0] is None
-    assert "https://example.com/query-0/1" in pipeline["corrections"][1]
+    assert "Only S1 to S3 exist" in pipeline["corrections"][1]
+    assert "http" not in pipeline["corrections"][1]
     assert pipeline["subtask_order"] == ["subtask_0", "subtask_1", "subtask_2"]
     assert [r.query for r in pipeline["summarizer_results"]] == ["query 0", "query 0", "query 1", "query 2"]
 
@@ -153,3 +156,61 @@ def test_delete_session_clears_it(client, pipeline):
     assert response.json() == {"deleted": SESSION}
     assert client.get(f"/session/{SESSION}/history").json() == []
     assert client.get(f"/session/{SESSION}/sources").json() == []
+
+
+# ── source-ID citations end to end ───────────────────────────────────────────
+
+ID_REPORT = "# Report\n- Claim one [S1][S3].\n- Claim two [S2].\n"
+RESOLVED = (
+    "# Report\n"
+    "- Claim one [example.com](https://example.com/query-0/1) [example.com](https://example.com/query-2/3).\n"
+    "- Claim two [example.com](https://example.com/query-0/2).\n"
+)
+
+
+@pytest.fixture
+def id_pipeline(pipeline, monkeypatch):
+    async def id_summarizer(results, query, history, correction=None):
+        pipeline.setdefault("corrections", []).append(correction)
+        return ID_REPORT
+
+    monkeypatch.setattr(main, "run_summarizer", id_summarizer)
+    return pipeline
+
+
+def test_source_ids_are_mapped_to_links_in_stream_history_and_markdown_export(client, id_pipeline):
+    events = run_research(client)
+
+    report_event = dict(events)["report"]
+    assert report_event["markdown"] == RESOLVED
+    assert report_event["guard"]["retried"] is False
+    assert id_pipeline["corrections"] == [None]
+    assert client.get(f"/session/{SESSION}/history").json()[-1]["report"] == RESOLVED
+    assert client.get(f"/download-report/{SESSION}/md").text == RESOLVED
+
+
+def test_docx_export_renders_cited_domains(client, id_pipeline, monkeypatch):
+    async def mcp_down(*args, **kwargs):
+        raise RuntimeError("MCP export unavailable")
+
+    monkeypatch.setattr(main, "_mcp_export_report", mcp_down)
+    run_research(client)
+
+    response = client.get(f"/download-report/{SESSION}/docx")
+
+    paragraphs = [p.text for p in Document(io.BytesIO(response.content)).paragraphs]
+    assert "Claim one example.com example.com." in paragraphs
+    assert "Claim two example.com." in paragraphs
+    assert not any("http" in p for p in paragraphs)
+
+
+@pytest.mark.parametrize(
+    ("markdown", "plain"),
+    [
+        ("Claim [example.com](https://www.example.com/a).", "Claim example.com."),
+        ("Claim [Reuters](https://reuters.com/x).", "Claim Reuters (reuters.com)."),
+        ("Claim [cell.com](https://www.cell.com/S0968-0004(20)30150-X).", "Claim cell.com."),
+    ],
+)
+def test_links_to_domain(markdown, plain):
+    assert main._links_to_domain(markdown) == plain

@@ -114,7 +114,7 @@ async def search_works() -> bool:
 async def run_once(q: dict, run_idx: int, recorder: UsageRecorder, judge_model: str, guard: bool = True) -> dict:
     from agents.orchestrator import run_subtask
     from agents.planner import run_planner
-    from agents.citation_guard import summarize_with_guard
+    from agents.citation_guard import number_sources, resolve_ids, summarize_with_guard
     from agents.summarizer import run_summarizer
     from models.schemas import DepthMode
     from tools.exa_search import _FALLBACK
@@ -150,10 +150,19 @@ async def run_once(q: dict, run_idx: int, recorder: UsageRecorder, judge_model: 
         t2 = time.perf_counter()
 
         recorder.stage = "summarizer"
+        drafts = []
+
+        async def recording_summarizer(*args, **kwargs):
+            draft = await run_summarizer(*args, **kwargs)
+            drafts.append(draft)
+            return draft
+
         if guard:
-            report_md, guard_stats = await summarize_with_guard(all_results, q["question"], [], run_summarizer)
+            report_md, guard_stats = await summarize_with_guard(all_results, q["question"], [], recording_summarizer)
         else:
-            report_md, guard_stats = await run_summarizer(all_results, q["question"], []), None
+            # No retry or URL check; source IDs still have to become links to be scored.
+            draft = await recording_summarizer(all_results, q["question"], [])
+            report_md, guard_stats = resolve_ids(draft, number_sources(all_results))[0], None
         t3 = time.perf_counter()
     except Exception as exc:
         record["error"] = f"{type(exc).__name__}: {exc}"
@@ -168,6 +177,9 @@ async def run_once(q: dict, run_idx: int, recorder: UsageRecorder, judge_model: 
     m["all_fallback"] = fallback_subtasks == len(plan.subtasks)
     if guard_stats is not None:
         m["guard"] = guard_stats
+    sources = number_sources(all_results)
+    failures = metrics.citation_failures(drafts, sources)
+    m["first_draft_invented"] = sum(1 for f in failures if f["draft"] == "first")
 
     recorder.stage = "judge"
     judged = {"claims": [], "no_answer": None, "ambiguity": None, "error": None}
@@ -197,6 +209,10 @@ async def run_once(q: dict, run_idx: int, recorder: UsageRecorder, judge_model: 
         "subtasks": [s.model_dump() for s in plan.subtasks],
         "results": results_dicts,
         "report": report_md,
+        # Raw summarizer output before ID mapping, so failures can be classified later.
+        "source_ids": {source_id: group[0].source for source_id, group in sources.items()},
+        "drafts": {"first": drafts[0], "retry": drafts[1] if len(drafts) > 1 else None},
+        "citation_failures": failures,
         "latency_s": {
             "planner": round(t1 - t0, 2),
             "search": round(t2 - t1, 2),
@@ -220,6 +236,12 @@ async def main_async(args):
     from agents.planner import MODEL as GENERATOR_MODEL
 
     questions = yaml.safe_load((EVALS_DIR / "questions.yaml").read_text(encoding="utf-8"))
+    if args.only:
+        wanted = args.only.split(",")
+        unknown = set(wanted) - {q["id"] for q in questions}
+        if unknown:
+            sys.exit(f"Unknown question ids: {', '.join(sorted(unknown))}")
+        questions = [q for q in questions if q["id"] in wanted]
     if args.questions:
         questions = questions[: args.questions]
 
@@ -232,6 +254,33 @@ async def main_async(args):
     print("Search check passed.", flush=True)
 
     started = datetime.now(timezone.utc)
+    meta = {
+        "date": date.today().isoformat(),
+        "started_at": started.isoformat(),
+        "finished_at": None,
+        "complete": False,
+        "questions": len(questions),
+        "runs_per_question": args.runs,
+        "judge_model": args.judge_model,
+        "generator_model": GENERATOR_MODEL,
+        "mcp_server_url": os.environ["MCP_SERVER_URL"],
+        "total_cost_usd": 0.0,
+        "stopped_early": False,
+        "citation_guard": not args.no_guard,
+        "citations": "ids",
+        "label": args.label,
+    }
+    stem = f"{meta['date']}-{args.tag}" if args.tag else meta["date"]
+    meta["results_file"] = f"results/{stem}.json"
+    out = EVALS_DIR / "results" / f"{stem}.json"
+    out.parent.mkdir(exist_ok=True)
+
+    def save():
+        # Rewritten after every run (via a temp file), so an interruption keeps completed runs.
+        tmp = out.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"meta": meta, "runs": runs}, indent=2), encoding="utf-8")
+        tmp.replace(out)
+
     runs, spent, stopped_early = [], 0.0, False
     total = len(questions) * args.runs
     for q in questions:
@@ -239,6 +288,8 @@ async def main_async(args):
             rec = await run_once(q, i, recorder, args.judge_model, guard=not args.no_guard)
             runs.append(rec)
             spent += rec["cost_usd"]["pipeline"] + rec["cost_usd"]["judge"]
+            meta["total_cost_usd"] = spent
+            save()
             m = rec.get("metrics", {})
             status = rec["error"] or (
                 f"sources={m['sources_returned']} cov={report.pct(m['citation_coverage'])} "
@@ -257,33 +308,24 @@ async def main_async(args):
         if stopped_early:
             break
 
-    meta = {
-        "date": date.today().isoformat(),
-        "started_at": started.isoformat(),
-        "finished_at": datetime.now(timezone.utc).isoformat(),
-        "questions": len(questions),
-        "runs_per_question": args.runs,
-        "judge_model": args.judge_model,
-        "generator_model": GENERATOR_MODEL,
-        "mcp_server_url": os.environ["MCP_SERVER_URL"],
-        "total_cost_usd": spent,
-        "stopped_early": stopped_early,
-        "citation_guard": not args.no_guard,
-    }
-    stem = f"{meta['date']}-{args.tag}" if args.tag else meta["date"]
-    meta["results_file"] = f"results/{stem}.json"
-    out = EVALS_DIR / "results" / f"{stem}.json"
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps({"meta": meta, "runs": runs}, indent=2), encoding="utf-8")
+    meta.update({"finished_at": datetime.now(timezone.utc).isoformat(), "complete": True, "stopped_early": stopped_early})
+    save()
 
     summary = report.summarize(runs)
     report.write_readme(EVALS_DIR / "README.md", meta, summary)
     if args.compare_to:
-        before = json.loads((EVALS_DIR / args.compare_to).read_text(encoding="utf-8"))
-        before["meta"].setdefault("results_file", args.compare_to)
-        report.write_comparison(
-            EVALS_DIR / "README.md", before["meta"], report.summarize(before["runs"]), meta, summary
-        )
+        # Earlier runs are cut down to this run's questions, so a subset compares like for like.
+        ids = {r["question_id"] for r in runs}
+        configs = []
+        for entry in args.compare_to:
+            label, _, rel = entry.rpartition("=")
+            before = json.loads((EVALS_DIR / rel).read_text(encoding="utf-8"))
+            before["meta"].setdefault("results_file", rel)
+            before_runs = [r for r in before["runs"] if r["question_id"] in ids]
+            configs.append((label or rel, before["meta"], report.summarize(before_runs)))
+        configs.append((args.label, meta, summary))
+        report.write_comparison(EVALS_DIR / "README.md", configs)
+        print("\n" + report.comparison_table([(label, s) for label, _, s in configs]))
     print(f"\nRaw results: {out}\nSummary table written to {EVALS_DIR / 'README.md'}")
     print(report.headline(meta, summary))
 
@@ -297,7 +339,12 @@ def main():
     parser.add_argument("--mcp-url", default="http://localhost:8001", help="local MCP server URL")
     parser.add_argument("--no-guard", action="store_true", help="skip the citation guard (raw summarizer output)")
     parser.add_argument("--tag", default="", help="results file suffix: results/<date>-<tag>.json")
-    parser.add_argument("--compare-to", default="", help="earlier results file (relative to evals/) for a before/after table")
+    parser.add_argument("--only", default="", help="comma-separated question ids to run (default: all)")
+    parser.add_argument("--label", default="ID citations", help="this run's column label in the comparison table")
+    parser.add_argument(
+        "--compare-to", nargs="+", default=[], metavar="LABEL=FILE",
+        help="earlier results files (relative to evals/), oldest first, for the comparison table",
+    )
     args = parser.parse_args()
 
     configure_env(args.mcp_url)

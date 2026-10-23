@@ -6,9 +6,17 @@ as a citation and as an invented URL.
 """
 
 import random
+from difflib import SequenceMatcher
 from urllib.parse import urlparse
 
-from agents.citation_guard import LINK_RE, normalize_url, report_units, visible_urls  # noqa: F401 (re-exported)
+from agents.citation_guard import (  # noqa: F401 (re-exported)
+    LINK_RE,
+    find_invalid_ids,
+    find_invented,
+    normalize_url,
+    report_units,
+    visible_urls,
+)
 
 
 def domain(url: str) -> str:
@@ -46,6 +54,30 @@ def score_run(report: str, results: list[dict]) -> dict:
         "unique_domains_cited": len({domain(u) for u in cited}),
         "unverified_claims": report.count("(unverified)"),
     }
+
+
+def citation_failures(drafts: list[str], sources: dict) -> list[dict]:
+    """Unknown source IDs and invented URLs in each raw summarizer draft (first, then retry).
+
+    Each invented URL comes with the most similar returned URL, to tell a
+    mis-copied source from one that isn't in the results at all.
+    """
+    returned = [group[0].source for group in sources.values()]
+    allowed = {normalize_url(u) for u in returned}
+    failures = []
+    for name, draft in zip(("first", "retry"), drafts):
+        failures += [{"draft": name, "kind": "id", "citation": i} for i in find_invalid_ids(draft, sources)]
+        for url in find_invented(draft, allowed):
+            scored = [(SequenceMatcher(None, normalize_url(url), normalize_url(u)).ratio(), u) for u in returned]
+            similarity, closest = max(scored, default=(0.0, None))
+            failures.append({
+                "draft": name,
+                "kind": "url",
+                "citation": url,
+                "closest_source": closest,
+                "similarity": round(similarity, 3),
+            })
+    return failures
 
 
 def strip_links(text: str) -> str:

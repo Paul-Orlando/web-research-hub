@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
-from agents.citation_guard import summarize_with_guard
+from agents.citation_guard import LINK_RE, summarize_with_guard
 from agents.orchestrator import run_subtask
 from agents.planner import run_planner
 from agents.summarizer import run_summarizer
@@ -39,15 +39,18 @@ app.add_middleware(
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _links_to_domain(text: str) -> str:
-    """Replace [label](url) with label (domain) for plain-text export."""
+    """Replace [label](url) with label (domain) for plain-text export, or just the
+    domain when the label already is the domain (citation-guard links)."""
     def replace(m: re.Match) -> str:
         label, url = m.group(1), m.group(2)
         try:
             domain = urlparse(url).netloc.removeprefix("www.")
         except Exception:
             domain = ""
-        return f"{label} ({domain})" if domain else label
-    return re.sub(r"\[([^\]]+)\]\(([^\)]+)\)", replace, text)
+        if not domain or label.lower() == domain.lower():
+            return label
+        return f"{label} ({domain})"
+    return LINK_RE.sub(replace, text)
 
 
 def _sse(event: str, data: dict) -> dict:

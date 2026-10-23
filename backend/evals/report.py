@@ -25,6 +25,7 @@ def _aggregate(runs: list[dict]) -> dict:
     judged = sum(m["judged_claims"] for m in ms)
     agg.update({
         "sources": mean(m["sources_returned"] for m in ms),
+        "units": mean(m["report_units"] for m in ms),
         "coverage": _ratio(sum(m["cited_units"] for m in ms), sum(m["report_units"] for m in ms)),
         "invented": _ratio(sum(len(m["invented_urls"]) for m in ms), sum(m["cited_urls"] for m in ms)),
         "invented_count": sum(len(m["invented_urls"]) for m in ms),
@@ -49,6 +50,11 @@ def _aggregate(runs: list[dict]) -> dict:
     ambiguity = [m["acknowledges_ambiguity"] for m in ms if "acknowledges_ambiguity" in m]
     if ambiguity:
         agg["ambiguity"] = (sum(ambiguity), len(ambiguity))
+    agg["unverified"] = sum(m.get("unverified_claims", 0) for m in ms)
+    # Guard runs record the first draft's count; without a guard the report is the first draft.
+    first = [m["guard"]["invented_before_retry"] if "guard" in m else len(m["invented_urls"]) for m in ms]
+    agg["first_draft_invented"] = sum(first)
+    agg["first_draft_invented_runs"] = sum(1 for n in first if n)
     guarded = [m["guard"] for m in ms if "guard" in m]
     if guarded:
         agg["guard_retried"] = (sum(g["retried"] for g in guarded), len(guarded))
@@ -117,6 +123,7 @@ def headline(meta: dict, summary: dict) -> str:
         lines.append("No-answer handling: {}/{} correct".format(*o["empty_handling"]))
     if "ambiguity" in o:
         lines.append("Ambiguity acknowledged: {}/{}".format(*o["ambiguity"]))
+    lines.append(f"Unverified claims (citation removed): {o['unverified']}")
     if "guard_retried" in o:
         lines.append(
             "Citation guard: retried {}/{} runs, links stripped in {} runs ({} links)".format(
@@ -126,43 +133,84 @@ def headline(meta: dict, summary: dict) -> str:
     return "\n".join(lines)
 
 
-def _arrow(before, after, fmt) -> str:
-    return f"{fmt(before)} → {fmt(after)}"
-
-
 def _money(x) -> str:
     return "—" if x is None else f"${x:.4f}"
 
 
-def comparison_table(before: dict, after: dict) -> str:
-    before_rows = {r["id"]: r for r in before["rows"]}
+def _retried(a: dict) -> str:
+    return "{}/{}".format(*a["guard_retried"]) if "guard_retried" in a else "—"
+
+
+def _units(a: dict) -> str:
+    return f"{a['units']:.1f}" if "units" in a else "—"
+
+
+def _first_draft(a: dict) -> str:
+    if "first_draft_invented" not in a:
+        return "—"
+    return f"{a['first_draft_invented']} in {a['first_draft_invented_runs']} runs"
+
+
+# (label, formatter) rows of the overall comparison table.
+_COMPARE_ROWS = [
+    ("Invented sources shown to reader", lambda a: f"{pct(a.get('invented'))} ({a.get('invented_count', 0)})"),
+    ("Invented citations in first draft", _first_draft),
+    ("Citation coverage", lambda a: pct(a.get("coverage"))),
+    ("Report units / run", lambda a: _units(a)),
+    ("Judge: supported / partial", lambda a: f"{pct(a.get('supported'))} / {pct(a.get('partial'))} (n={a.get('judged', 0)})"),
+    ("Unverified claims (citation removed)", lambda a: str(a.get("unverified", "—"))),
+    ("Guard retries", _retried),
+    ("Latency / run", lambda a: f"{a['latency']:.1f}s" if "latency" in a else "—"),
+    ("Cost / run", lambda a: _money(a.get("cost"))),
+]
+
+
+def comparison_table(configs: list[tuple[str, dict]]) -> str:
+    """Overall metrics, one column per (label, summary)."""
     lines = [
-        "| Question | Invented sources | Citation coverage | Cost / run | Guard retried | Links stripped |",
-        "|---|---|---|---|---|---|",
+        "| Metric | " + " | ".join(label for label, _ in configs) + " |",
+        "|---|" + "---|" * len(configs),
     ]
-
-    def row(label, b, a):
-        retried = "{}/{}".format(*a["guard_retried"]) if "guard_retried" in a else "—"
-        return (
-            f"| {label} | {_arrow(b.get('invented'), a.get('invented'), pct)} "
-            f"| {_arrow(b.get('coverage'), a.get('coverage'), pct)} "
-            f"| {_arrow(b.get('cost'), a.get('cost'), _money)} | {retried} | {a.get('guard_removed', '—')} |"
-        )
-
-    for a in after["rows"]:
-        lines.append(row(f"`{a['id']}`", before_rows.get(a["id"], {}), a))
-    lines.append(row("**Overall**", before["overall"], after["overall"]))
+    for name, fmt in _COMPARE_ROWS:
+        lines.append(f"| {name} | " + " | ".join(fmt(s["overall"]) for _, s in configs) + " |")
     return "\n".join(lines)
 
 
-def write_comparison(path: Path, before_meta: dict, before: dict, after_meta: dict, after: dict):
-    b, a = before["overall"], after["overall"]
+def question_comparison_table(configs: list[tuple[str, dict]]) -> str:
+    """Per-question values as 'first → second → ...', in the order of `configs`."""
+    rows_by_config = [{r["id"]: r for r in s["rows"]} for _, s in configs]
+
+    def chain(qid, fmt):
+        return " → ".join(fmt(rows.get(qid, {})) for rows in rows_by_config)
+
+    lines = [
+        "| Question | Citation coverage | Report units | Supported | Unverified | Guard retried | Cost / run |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for r in configs[-1][1]["rows"]:
+        qid = r["id"]
+        lines.append(
+            f"| `{qid}` | {chain(qid, lambda a: pct(a.get('coverage')))} | {chain(qid, _units)} "
+            f"| {chain(qid, lambda a: pct(a.get('supported')))} "
+            f"| {chain(qid, lambda a: str(a.get('unverified', '—')))} | {chain(qid, _retried)} "
+            f"| {chain(qid, lambda a: _money(a.get('cost')))} |"
+        )
+    return "\n".join(lines)
+
+
+def write_comparison(path: Path, configs: list[tuple[str, dict, dict]]):
+    """Writes the comparison block for (label, meta, summary) configs, oldest first."""
+    files = "; ".join(f"{label}: `{meta['results_file']}`" for label, meta, _ in configs)
+    pairs = [(label, summary) for label, _, summary in configs]
+    runs = configs[-1][2]["overall"]["runs"]
+    questions = len(configs[-1][2]["rows"])
     block = (
         f"{CMP_START}\n"
-        f"_Before: `{before_meta['results_file']}` (no guard, {b['runs']} runs). "
-        f"After: `{after_meta['results_file']}` (citation guard on, {a['runs']} runs). "
-        f"Same questions, 3 runs each; search results differ between runs._\n\n"
-        f"{comparison_table(before, after)}\n"
+        f"_{questions} questions, {runs} runs per configuration; search results differ between runs. "
+        f"{files}._\n\n"
+        f"{comparison_table(pairs)}\n\n"
+        f"Per question ({' → '.join(label for label, _ in pairs)}):\n\n"
+        f"{question_comparison_table(pairs)}\n"
         f"{CMP_END}"
     )
     text = path.read_text(encoding="utf-8")
@@ -178,7 +226,8 @@ def write_readme(path: Path, meta: dict, summary: dict):
         f"{START}\n"
         f"_Run {meta['date']}: {meta['questions']} questions x {meta['runs_per_question']} runs, "
         f"generator `{meta['generator_model']}`, judge `{meta['judge_model']}`, "
-        f"citation guard {'on' if meta.get('citation_guard') else 'off'}, "
+        f"citation guard {'on' if meta.get('citation_guard') else 'off'}"
+        f"{', source-ID citations' if meta.get('citations') == 'ids' else ''}, "
         f"total spend ${meta['total_cost_usd']:.2f}"
         f"{' (stopped early at --max-cost)' if meta['stopped_early'] else ''}. "
         f"Raw data: `{results_file}`._\n\n"
