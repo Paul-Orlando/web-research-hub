@@ -1,3 +1,5 @@
+[![CI](https://github.com/Paul-Orlando/web-research-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/Paul-Orlando/web-research-hub/actions/workflows/ci.yml)
+
 # Web Research Hub
 ### Next.js · FastAPI · OpenRouter · Gemini 2.5 Flash · Exa AI · MCP
 
@@ -311,6 +313,26 @@ npm run dev
 ```
 
 Frontend runs at `http://localhost:3000`
+
+---
+
+## Testing
+
+The backend has a pytest suite in `backend/tests/` covering the planner,
+orchestrator, MCP search client, summarizer, and API endpoints. All
+external calls (OpenRouter, MCP server) are mocked, so no API keys or
+network access are needed.
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+Test dependencies live in `requirements-dev.txt`, so Railway's install of
+`requirements.txt` stays lean. GitHub Actions runs the backend tests plus
+the frontend's `npm run lint` and `npm run build` on every push and pull
+request to `main`.
 
 ---
 

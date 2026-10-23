@@ -20,6 +20,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem("theme") as Theme | null;
     const initial = stored ?? "dark";
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads localStorage after mount to avoid hydration mismatch
     setTheme(initial);
     document.documentElement.classList.toggle("dark", initial === "dark");
   }, []);

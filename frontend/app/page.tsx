@@ -57,6 +57,7 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads localStorage after mount to avoid hydration mismatch
     setSessionId(getOrCreateSessionId());
   }, []);
 
