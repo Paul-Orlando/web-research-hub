@@ -1,0 +1,82 @@
+# Research quality eval question set.
+# depth: quick | standard   expect (optional): no_answer | ambiguous
+# Recent-news questions are phrased relative to "the past 30 days" so the set
+# stays valid without hard-coding events.
+
+- id: apollo11
+  category: factual
+  depth: quick
+  question: What were the key outcomes of the Apollo 11 mission?
+
+- id: berlin_wall
+  category: factual
+  depth: quick
+  question: Why did the Berlin Wall fall in 1989?
+
+- id: penicillin
+  category: factual
+  depth: standard
+  question: How was penicillin discovered and developed into a mass-produced drug?
+
+- id: montreal_protocol
+  category: factual
+  depth: quick
+  question: How was the Montreal Protocol negotiated and how effective has it been?
+
+- id: news_ai_regulation
+  category: recent
+  depth: quick
+  question: What are the latest developments in AI regulation from the past 30 days?
+
+- id: news_climate
+  category: recent
+  depth: quick
+  question: What major climate or extreme-weather news has been reported in the past 30 days?
+
+- id: news_semiconductors
+  category: recent
+  depth: standard
+  question: What has happened in the semiconductor industry in the past 30 days?
+
+- id: postgres_vs_mysql
+  category: comparison
+  depth: quick
+  question: Compare PostgreSQL and MySQL for a write-heavy web application.
+
+- id: heat_pump_vs_furnace
+  category: comparison
+  depth: quick
+  question: "Heat pumps vs gas furnaces: which is cheaper to run in cold climates?"
+
+- id: lfp_vs_nmc
+  category: comparison
+  depth: standard
+  question: Compare LFP and NMC lithium-ion batteries for electric vehicles.
+
+- id: rust_vs_go
+  category: comparison
+  depth: quick
+  question: "Rust vs Go for network services: performance and developer productivity trade-offs."
+
+- id: raft
+  category: technical
+  depth: quick
+  question: How does the Raft consensus algorithm handle leader election and log replication?
+
+- id: crispr_editing
+  category: technical
+  depth: quick
+  question: How does CRISPR base editing differ from prime editing?
+
+- id: ambiguous_mercury
+  category: ambiguous
+  depth: quick
+  expect: ambiguous
+  question: Is Mercury safe?
+
+# False premise: there is no Nobel Prize in Mathematics.
+- id: no_answer_math_nobel
+  category: no_answer
+  depth: quick
+  expect: no_answer
+  question: What contribution did the 2025 Nobel Prize in Mathematics committee cite for the winner?

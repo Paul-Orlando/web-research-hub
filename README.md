@@ -336,6 +336,32 @@ request to `main`.
 
 ---
 
+## Evaluation
+
+`backend/evals/` holds a research quality eval: 15 questions (factual,
+recent news, comparisons, technical, one ambiguous, one false premise),
+each run 3 times through the real pipeline against a local MCP server, with
+an LLM judge checking whether cited sources support the claims. Setup,
+metric definitions and the full per-question table are in
+[`backend/evals/README.md`](backend/evals/README.md).
+
+First full run (2026-10-22, 45 runs, Gemini 2.5 Flash, judge GPT-4.1 mini):
+
+| Metric | Result |
+|---|---|
+| Invented-source rate (cited URL not in search results) | **3%** (10 URLs; target 0%) |
+| Citation coverage (bullets/sentences with a citation) | 69% |
+| Citation support (judge, 220 sampled claims) | 97% supported, 3% partial, 0% unsupported |
+| False-premise question flagged instead of answered | 2/3 runs |
+| Ambiguous question acknowledged | 3/3 runs |
+| Latency / tokens / cost per query | 25.8 s · 6,220 tokens · $0.032 (Quick ≈ $0.027, Standard ≈ $0.052) |
+
+Every invented URL appeared at Quick or Standard depth with real sources
+available, so the model wasn't short of material. Next step: a server-side
+citation guard.
+
+---
+
 ## Environment Variables
 
 ### Backend (`backend/.env`)
