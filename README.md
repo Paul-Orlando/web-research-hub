@@ -97,7 +97,19 @@ FastAPI Orchestrator
 │   Cites every claim as [source](url)    │
 └──────────────┬───────────────────────────┘
                ↓
-        SSE: report event → frontend renders
+┌─────────────────────────────────────────┐
+│   4. CITATION GUARD                     │
+│   Pure Python — server-side check       │
+│                                          │
+│   Every visible URL must be one the     │
+│   search step returned                  │
+│   Invented URL or low coverage →        │
+│   one summarizer retry                  │
+│   Still invented → link removed,        │
+│   claim marked (unverified)             │
+└──────────────┬───────────────────────────┘
+               ↓
+        SSE: report event (+ guard stats) → frontend renders
         Source List Panel built directly from
         Orchestrator results (not the Summarizer)
 ```
@@ -129,6 +141,11 @@ FastAPI Orchestrator
 - **MCP tool layer** — search and export operations route through
   the Web Research Hub MCP Server, making the tool layer
   independently reusable by any MCP-compatible client
+- **Citation guard** — a server-side check that no report shows a
+  URL the search step didn't return; invented links are retried,
+  then removed
+- **Measured, not assumed** — a 45-run research quality eval with
+  an LLM judge, plus a mocked pytest suite and GitHub Actions CI
 
 ---
 
@@ -169,6 +186,16 @@ OpenRouter. If synthesis quality is ever noticeably weaker,
 the Summarizer model can be swapped back via a one-line change
 in `summarizer.py`.
 
+**Citations are verified in code, not trusted from the prompt**
+The Summarizer is told to cite only the sources it was given, but
+a prompt is not a guarantee. A server-side citation guard compares
+every visible URL in the report with the URLs the Orchestrator
+actually returned. An invented URL or a report with too few
+citations gets one Summarizer retry with a correction note;
+anything still invented is removed and the claim is marked
+(unverified), so a fabricated link never reaches the reader. The
+eval measured the cost of this: +0.8 s and +4% per query.
+
 **Citations render as visible domains in exported documents**
 Exports render citations as `claim text (domain.com)` so the
 source remains identifiable even outside the live app.
@@ -194,6 +221,8 @@ MCP server is a separate deployable service at
 | MCP Server | Web Research Hub MCP Server (Streamable HTTP) |
 | Streaming | SSE (Server-Sent Events) |
 | Export | fpdf2 (PDF), python-docx (DOCX) |
+| Testing | pytest (all external calls mocked) + GitHub Actions CI |
+| Evaluation | 45-run eval, GPT-4.1 mini as judge |
 | Frontend Hosting | Vercel |
 | Backend Hosting | Railway |
 | Built With | Claude Code |
@@ -256,16 +285,22 @@ web-research-hub/
 │   ├── agents/
 │   │   ├── planner.py
 │   │   ├── orchestrator.py
-│   │   └── summarizer.py
+│   │   ├── summarizer.py
+│   │   └── citation_guard.py   verifies every cited URL
 │   ├── tools/
 │   │   └── exa_search.py       MCP client → Web Research Hub
 │   │                           MCP Server (Streamable HTTP)
 │   ├── models/
 │   │   └── schemas.py
 │   ├── session_store.py
+│   ├── tests/                  pytest suite (mocked)
+│   ├── evals/                  research quality eval + results
 │   ├── requirements.txt
+│   ├── requirements-dev.txt    test/eval dependencies
 │   ├── Procfile
 │   └── .env.example
+│
+├── .github/workflows/ci.yml    backend tests + frontend lint/build
 │
 ├── workflows/                  Original n8n prototype (archived)
 │   ├── search_orchestrator.json
@@ -487,6 +522,8 @@ for deployment instructions.
 
 ## Roadmap
 
+- [ ] Raise citation coverage on technical topics (lowest:
+      CRISPR at 56%)
 - [ ] Source credibility weighting in the synthesis step
 - [ ] Document upload + vector search (ChromaDB) — draw on
       both live web results and uploaded documents
@@ -515,7 +552,7 @@ Added the Search Depth Toggle, live Source List Panel, real-time
 progress streaming, multi-turn sessions, and document export —
 closing every gap identified in Phase 1's Known Limitations.
 
-**Phase 3 — MCP integration (current)**
+**Phase 3 — MCP integration**
 Introduced the Web Research Hub MCP Server as the tool layer,
 replacing direct Exa API calls in the backend. All web search
 and export operations now route through the MCP server via
@@ -523,6 +560,15 @@ Streamable HTTP, making the tool layer independently reusable
 by any MCP-compatible client. Added API key authentication
 and sliding-window rate limiting (10 requests/IP/hour) to
 the MCP server.
+
+**Phase 4 — Tests, evaluation and citation guard (current)**
+Added a mocked pytest suite and GitHub Actions CI, then a
+45-run research quality eval with an LLM judge. The baseline
+showed occasional invented citations (5 URLs in 45 runs) and one
+report with no citations at all, so a server-side citation guard
+was added. The eval also caught bugs in the guard's first version
+(it stripped real URLs containing parentheses), which were fixed
+and re-measured before the final numbers above.
 
 ---
 
