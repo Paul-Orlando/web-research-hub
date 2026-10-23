@@ -345,24 +345,27 @@ an LLM judge checking whether cited sources support the claims. Setup,
 metric definitions and the full per-question table are in
 [`backend/evals/README.md`](backend/evals/README.md).
 
-First full run (2026-10-22, 45 runs, Gemini 2.5 Flash, judge GPT-4.1 mini),
-before any citation guard:
+Each run is 45 pipeline runs (Gemini 2.5 Flash, judge GPT-4.1 mini). The
+server-side citation guard checks every visible URL against the search
+results, retries the summarizer once on invented URLs or low citation
+coverage, and removes anything still invented:
 
-| Metric | Result |
-|---|---|
-| Invented-source rate (cited URL not in search results) | **2%** (5 URLs in 5 runs; target 0%) |
-| Citation coverage (bullets/sentences with a citation) | 69% |
-| Citation support (judge, 220 sampled claims) | 97% supported, 3% partial, 0% unsupported |
-| False-premise question flagged instead of answered | 2/3 runs |
-| Ambiguous question acknowledged | 3/3 runs |
-| Latency / tokens / cost per query | 25.8 s · 6,220 tokens · $0.032 (Quick ≈ $0.027, Standard ≈ $0.052) |
+| Metric | No guard (2026-10-22) | Citation guard (2026-10-23) |
+|---|---|---|
+| Invented-source rate (visible URL not in search results) | 2% (5 URLs in 5 runs) | **0%** |
+| Citation coverage (bullets/sentences with a citation) | 69% (1 run with zero citations) | **72%** (no run under 50%) |
+| Citation support (judge, sampled claims) | 97% supported (n=220) | 97% supported (n=225) |
+| False-premise question flagged instead of answered | 2/3 | 3/3 |
+| Ambiguous question acknowledged | 3/3 | 3/3 |
+| Latency / cost per query | 25.8 s · $0.0316 | 26.6 s · $0.0328 (+4%) |
+| Guard activity | — | retried 12/45 runs, URLs removed in 3 |
 
-A first citation guard (v1) cut invented URLs to 1% (3 URLs), but the run
-exposed bugs: it treated real URLs containing parentheses as invented,
-stripped 37 real citations, and missed bare-text URLs. Coverage fell to 55%.
-Those are fixed, and the guard now also retries low-coverage reports; a full
-re-run with the fixed guard is next. Details are in the
-[eval README](backend/evals/README.md#before--after-citation-guard).
+Per question, cost ranges from about $0.025–0.030 at Quick depth to about
+$0.051–0.056 at Standard. The first version of the guard had parsing bugs
+(it stripped real URLs containing parentheses and missed bare-text URLs); the
+eval caught them, and the
+[eval README](backend/evals/README.md#before--after-citation-guard) has the
+full per-question table and history.
 
 ---
 
