@@ -111,9 +111,10 @@ async def search_works() -> bool:
     return any(r["source"] for r in results)
 
 
-async def run_once(q: dict, run_idx: int, recorder: UsageRecorder, judge_model: str) -> dict:
+async def run_once(q: dict, run_idx: int, recorder: UsageRecorder, judge_model: str, guard: bool = True) -> dict:
     from agents.orchestrator import run_subtask
     from agents.planner import run_planner
+    from agents.citation_guard import summarize_with_guard
     from agents.summarizer import run_summarizer
     from models.schemas import DepthMode
     from tools.exa_search import _FALLBACK
@@ -149,7 +150,10 @@ async def run_once(q: dict, run_idx: int, recorder: UsageRecorder, judge_model: 
         t2 = time.perf_counter()
 
         recorder.stage = "summarizer"
-        report_md = await run_summarizer(all_results, q["question"], [])
+        if guard:
+            report_md, guard_stats = await summarize_with_guard(all_results, q["question"], [], run_summarizer)
+        else:
+            report_md, guard_stats = await run_summarizer(all_results, q["question"], []), None
         t3 = time.perf_counter()
     except Exception as exc:
         record["error"] = f"{type(exc).__name__}: {exc}"
@@ -162,6 +166,8 @@ async def run_once(q: dict, run_idx: int, recorder: UsageRecorder, judge_model: 
     m["subtasks"] = len(plan.subtasks)
     m["fallback_subtasks"] = fallback_subtasks
     m["all_fallback"] = fallback_subtasks == len(plan.subtasks)
+    if guard_stats is not None:
+        m["guard"] = guard_stats
 
     recorder.stage = "judge"
     judged = {"claims": [], "no_answer": None, "ambiguity": None, "error": None}
@@ -230,7 +236,7 @@ async def main_async(args):
     total = len(questions) * args.runs
     for q in questions:
         for i in range(args.runs):
-            rec = await run_once(q, i, recorder, args.judge_model)
+            rec = await run_once(q, i, recorder, args.judge_model, guard=not args.no_guard)
             runs.append(rec)
             spent += rec["cost_usd"]["pipeline"] + rec["cost_usd"]["judge"]
             m = rec.get("metrics", {})
@@ -262,13 +268,22 @@ async def main_async(args):
         "mcp_server_url": os.environ["MCP_SERVER_URL"],
         "total_cost_usd": spent,
         "stopped_early": stopped_early,
+        "citation_guard": not args.no_guard,
     }
-    out = EVALS_DIR / "results" / f"{meta['date']}.json"
+    stem = f"{meta['date']}-{args.tag}" if args.tag else meta["date"]
+    meta["results_file"] = f"results/{stem}.json"
+    out = EVALS_DIR / "results" / f"{stem}.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps({"meta": meta, "runs": runs}, indent=2), encoding="utf-8")
 
     summary = report.summarize(runs)
     report.write_readme(EVALS_DIR / "README.md", meta, summary)
+    if args.compare_to:
+        before = json.loads((EVALS_DIR / args.compare_to).read_text(encoding="utf-8"))
+        before["meta"].setdefault("results_file", args.compare_to)
+        report.write_comparison(
+            EVALS_DIR / "README.md", before["meta"], report.summarize(before["runs"]), meta, summary
+        )
     print(f"\nRaw results: {out}\nSummary table written to {EVALS_DIR / 'README.md'}")
     print(report.headline(meta, summary))
 
@@ -280,6 +295,9 @@ def main():
     parser.add_argument("--judge-model", default="openai/gpt-4.1-mini", help="OpenRouter model id for the judge")
     parser.add_argument("--max-cost", type=float, default=5.0, help="stop once estimated spend exceeds this (USD)")
     parser.add_argument("--mcp-url", default="http://localhost:8001", help="local MCP server URL")
+    parser.add_argument("--no-guard", action="store_true", help="skip the citation guard (raw summarizer output)")
+    parser.add_argument("--tag", default="", help="results file suffix: results/<date>-<tag>.json")
+    parser.add_argument("--compare-to", default="", help="earlier results file (relative to evals/) for a before/after table")
     args = parser.parse_args()
 
     configure_env(args.mcp_url)

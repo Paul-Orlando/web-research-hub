@@ -9,7 +9,8 @@
     "generator_model": "google/gemini-2.5-flash",
     "mcp_server_url": "http://localhost:8001",
     "total_cost_usd": 1.4912461000000004,
-    "stopped_early": false
+    "stopped_early": false,
+    "rescored_at": "2026-10-23T09:10:30.065062+00:00"
   },
   "runs": [
     {
@@ -135,7 +136,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -331,7 +333,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -531,7 +534,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -731,7 +735,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -927,7 +932,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -1129,7 +1135,8 @@
         "judged_claims": 5,
         "claims_supported": 4,
         "claims_partial": 1,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -1373,7 +1380,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -1659,7 +1667,8 @@
         "judged_claims": 5,
         "claims_supported": 4,
         "claims_partial": 1,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -1897,10 +1906,8 @@
         "cited_units": 17,
         "citation_coverage": 0.8095238095238095,
         "cited_urls": 10,
-        "invented_urls": [
-          "https://www.thelancet.com/journals/lancet/article/PIIS0140-6736(04"
-        ],
-        "invented_rate": 0.1,
+        "invented_urls": [],
+        "invented_rate": 0.0,
         "unique_domains_returned": 8,
         "unique_domains_cited": 7,
         "subtasks": 3,
@@ -1909,7 +1916,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -2101,7 +2109,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -2297,7 +2306,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -2491,7 +2501,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -2683,7 +2694,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -2875,7 +2887,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -3063,7 +3076,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -3251,7 +3265,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -3439,7 +3454,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -3627,7 +3643,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -3909,7 +3926,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -4191,7 +4209,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -4485,7 +4504,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -4693,7 +4713,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -4885,7 +4906,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -5085,7 +5107,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -5273,7 +5296,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -5461,7 +5485,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -5639,10 +5664,8 @@
         "cited_units": 34,
         "citation_coverage": 0.6938775510204082,
         "cited_urls": 6,
-        "invented_urls": [
-          "https://www.cell.com/joule/fulltext/S2542-4351(23"
-        ],
-        "invented_rate": 0.16666666666666666,
+        "invented_urls": [],
+        "invented_rate": 0.0,
         "unique_domains_returned": 6,
         "unique_domains_cited": 6,
         "subtasks": 2,
@@ -5651,7 +5674,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -5929,7 +5953,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -6225,7 +6250,8 @@
         "judged_claims": 0,
         "claims_supported": 0,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [],
@@ -6447,7 +6473,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -6637,7 +6664,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -6825,7 +6853,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -7013,7 +7042,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -7201,7 +7231,8 @@
         "judged_claims": 5,
         "claims_supported": 4,
         "claims_partial": 1,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -7391,10 +7422,8 @@
         "cited_units": 26,
         "citation_coverage": 0.6842105263157895,
         "cited_urls": 5,
-        "invented_urls": [
-          "https://en.wikipedia.org/wiki/Raft_(algorithm"
-        ],
-        "invented_rate": 0.2,
+        "invented_urls": [],
+        "invented_rate": 0.0,
         "unique_domains_returned": 4,
         "unique_domains_cited": 4,
         "subtasks": 2,
@@ -7403,7 +7432,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -7581,10 +7611,8 @@
         "cited_units": 22,
         "citation_coverage": 0.6470588235294118,
         "cited_urls": 4,
-        "invented_urls": [
-          "https://en.wikipedia.org/wiki/Raft_(algorithm"
-        ],
-        "invented_rate": 0.25,
+        "invented_urls": [],
+        "invented_rate": 0.0,
         "unique_domains_returned": 4,
         "unique_domains_cited": 4,
         "subtasks": 2,
@@ -7593,7 +7621,8 @@
         "judged_claims": 5,
         "claims_supported": 4,
         "claims_partial": 1,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -7789,7 +7818,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -7974,20 +8004,21 @@
         "report_units": 27,
         "cited_units": 17,
         "citation_coverage": 0.6296296296296297,
-        "cited_urls": 5,
+        "cited_urls": 6,
         "invented_urls": [
           "https://en.wikipedia.com/wiki/Prime_editing"
         ],
-        "invented_rate": 0.2,
+        "invented_rate": 0.16666666666666666,
         "unique_domains_returned": 3,
-        "unique_domains_cited": 3,
+        "unique_domains_cited": 4,
         "subtasks": 2,
         "fallback_subtasks": 0,
         "all_fallback": false,
         "judged_claims": 5,
         "claims_supported": 4,
         "claims_partial": 1,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -8164,11 +8195,9 @@
         "report_units": 32,
         "cited_units": 21,
         "citation_coverage": 0.65625,
-        "cited_urls": 5,
-        "invented_urls": [
-          "https://www.cell.com/molecular-therapy-family/nucleic-acids/fulltext/S2162-2531(25"
-        ],
-        "invented_rate": 0.2,
+        "cited_urls": 6,
+        "invented_urls": [],
+        "invented_rate": 0.0,
         "unique_domains_returned": 3,
         "unique_domains_cited": 3,
         "subtasks": 2,
@@ -8177,7 +8206,8 @@
         "judged_claims": 5,
         "claims_supported": 5,
         "claims_partial": 0,
-        "claims_unsupported": 0
+        "claims_unsupported": 0,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -8366,7 +8396,8 @@
         "claims_supported": 5,
         "claims_partial": 0,
         "claims_unsupported": 0,
-        "acknowledges_ambiguity": true
+        "acknowledges_ambiguity": true,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -8562,7 +8593,8 @@
         "claims_supported": 5,
         "claims_partial": 0,
         "claims_unsupported": 0,
-        "acknowledges_ambiguity": true
+        "acknowledges_ambiguity": true,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -8758,7 +8790,8 @@
         "claims_supported": 5,
         "claims_partial": 0,
         "claims_unsupported": 0,
-        "acknowledges_ambiguity": true
+        "acknowledges_ambiguity": true,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -8956,7 +8989,8 @@
         "claims_supported": 5,
         "claims_partial": 0,
         "claims_unsupported": 0,
-        "empty_handling_correct": false
+        "empty_handling_correct": false,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -9156,7 +9190,8 @@
         "claims_supported": 5,
         "claims_partial": 0,
         "claims_unsupported": 0,
-        "empty_handling_correct": true
+        "empty_handling_correct": true,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [
@@ -9348,7 +9383,8 @@
         "claims_supported": 3,
         "claims_partial": 2,
         "claims_unsupported": 0,
-        "empty_handling_correct": true
+        "empty_handling_correct": true,
+        "unverified_claims": 0
       },
       "judge": {
         "claims": [

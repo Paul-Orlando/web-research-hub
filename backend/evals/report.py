@@ -5,6 +5,7 @@ from pathlib import Path
 from statistics import mean
 
 START, END = "<!-- results:start -->", "<!-- results:end -->"
+CMP_START, CMP_END = "<!-- compare:start -->", "<!-- compare:end -->"
 
 
 def pct(x) -> str:
@@ -48,6 +49,11 @@ def _aggregate(runs: list[dict]) -> dict:
     ambiguity = [m["acknowledges_ambiguity"] for m in ms if "acknowledges_ambiguity" in m]
     if ambiguity:
         agg["ambiguity"] = (sum(ambiguity), len(ambiguity))
+    guarded = [m["guard"] for m in ms if "guard" in m]
+    if guarded:
+        agg["guard_retried"] = (sum(g["retried"] for g in guarded), len(guarded))
+        agg["guard_stripped_runs"] = sum(1 for g in guarded if g["removed"])
+        agg["guard_removed"] = sum(g["removed"] for g in guarded)
     return agg
 
 
@@ -111,17 +117,71 @@ def headline(meta: dict, summary: dict) -> str:
         lines.append("No-answer handling: {}/{} correct".format(*o["empty_handling"]))
     if "ambiguity" in o:
         lines.append("Ambiguity acknowledged: {}/{}".format(*o["ambiguity"]))
+    if "guard_retried" in o:
+        lines.append(
+            "Citation guard: retried {}/{} runs, links stripped in {} runs ({} links)".format(
+                *o["guard_retried"], o["guard_stripped_runs"], o["guard_removed"]
+            )
+        )
     return "\n".join(lines)
 
 
+def _arrow(before, after, fmt) -> str:
+    return f"{fmt(before)} → {fmt(after)}"
+
+
+def _money(x) -> str:
+    return "—" if x is None else f"${x:.4f}"
+
+
+def comparison_table(before: dict, after: dict) -> str:
+    before_rows = {r["id"]: r for r in before["rows"]}
+    lines = [
+        "| Question | Invented sources | Citation coverage | Cost / run | Guard retried | Links stripped |",
+        "|---|---|---|---|---|---|",
+    ]
+
+    def row(label, b, a):
+        retried = "{}/{}".format(*a["guard_retried"]) if "guard_retried" in a else "—"
+        return (
+            f"| {label} | {_arrow(b.get('invented'), a.get('invented'), pct)} "
+            f"| {_arrow(b.get('coverage'), a.get('coverage'), pct)} "
+            f"| {_arrow(b.get('cost'), a.get('cost'), _money)} | {retried} | {a.get('guard_removed', '—')} |"
+        )
+
+    for a in after["rows"]:
+        lines.append(row(f"`{a['id']}`", before_rows.get(a["id"], {}), a))
+    lines.append(row("**Overall**", before["overall"], after["overall"]))
+    return "\n".join(lines)
+
+
+def write_comparison(path: Path, before_meta: dict, before: dict, after_meta: dict, after: dict):
+    b, a = before["overall"], after["overall"]
+    block = (
+        f"{CMP_START}\n"
+        f"_Before: `{before_meta['results_file']}` (no guard, {b['runs']} runs). "
+        f"After: `{after_meta['results_file']}` (citation guard on, {a['runs']} runs). "
+        f"Same questions, 3 runs each; search results differ between runs._\n\n"
+        f"{comparison_table(before, after)}\n"
+        f"{CMP_END}"
+    )
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(re.escape(CMP_START) + r".*?" + re.escape(CMP_END), re.DOTALL)
+    if not pattern.search(text):
+        raise ValueError(f"{path} has no {CMP_START} / {CMP_END} markers")
+    path.write_text(pattern.sub(lambda _: block, text), encoding="utf-8")
+
+
 def write_readme(path: Path, meta: dict, summary: dict):
+    results_file = meta.get("results_file", f"results/{meta['date']}.json")
     block = (
         f"{START}\n"
         f"_Run {meta['date']}: {meta['questions']} questions x {meta['runs_per_question']} runs, "
         f"generator `{meta['generator_model']}`, judge `{meta['judge_model']}`, "
+        f"citation guard {'on' if meta.get('citation_guard') else 'off'}, "
         f"total spend ${meta['total_cost_usd']:.2f}"
         f"{' (stopped early at --max-cost)' if meta['stopped_early'] else ''}. "
-        f"Raw data: `results/{meta['date']}.json`._\n\n"
+        f"Raw data: `{results_file}`._\n\n"
         f"{table(summary)}\n\n"
         f"```\n{headline(meta, summary)}\n```\n"
         f"{END}"
