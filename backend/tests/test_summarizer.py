@@ -38,6 +38,16 @@ async def test_all_fallbacks_send_no_results_notice(respx_mock):
     assert "No search results were returned." in sent_messages(route)[1]["content"]
 
 
+async def test_correction_note_is_appended_to_user_message(respx_mock):
+    route = respx_mock.post(OPENROUTER_URL).mock(return_value=openrouter_reply("report"))
+
+    await run_summarizer([make_result("query a", 1)], "topic", [])
+    assert "CORRECTION" not in sent_messages(route)[1]["content"]
+
+    await run_summarizer([make_result("query a", 1)], "topic", [], correction="CORRECTION: use only X")
+    assert sent_messages(route)[1]["content"].endswith("\n\nCORRECTION: use only X")
+
+
 async def test_citations_use_markdown_link_format(respx_mock):
     report = (
         "## Findings\n"

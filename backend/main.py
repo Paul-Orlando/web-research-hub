@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
+from agents.citation_guard import summarize_with_guard
 from agents.orchestrator import run_subtask
 from agents.planner import run_planner
 from agents.summarizer import run_summarizer
@@ -203,7 +204,9 @@ async def research(request: ResearchRequest):
             # Stage 3: Summarizing
             yield _sse("stage", {"stage": "synthesizing", "message": "Synthesizing report..."})
 
-            report_markdown = await run_summarizer(all_results, request.query, history)
+            report_markdown, guard_stats = await summarize_with_guard(
+                all_results, request.query, history, run_summarizer
+            )
 
             # Persist to session
             session_sources = [
@@ -218,7 +221,7 @@ async def research(request: ResearchRequest):
                 session_sources,
             )
 
-            yield _sse("report", {"markdown": report_markdown})
+            yield _sse("report", {"markdown": report_markdown, "guard": guard_stats})
             yield _sse("done", {})
 
         except Exception as exc:

@@ -10,6 +10,7 @@ from tests.conftest import fallback_result, make_result, make_subtask
 SESSION = "test-session"
 # Deliberately cites URLs the orchestrator never returned.
 REPORT = "# Report\n- Claim [Other](https://not-a-search-result.com/z)\n"
+GUARDED_REPORT = "# Report\n- Claim Other (unverified)\n"
 
 
 @pytest.fixture
@@ -36,8 +37,9 @@ def pipeline(monkeypatch):
         seen.setdefault("subtask_order", []).append(subtask.id)
         return results_by_query[subtask.query]
 
-    async def fake_summarizer(results, query, history):
+    async def fake_summarizer(results, query, history, correction=None):
         seen["summarizer_results"] = results
+        seen.setdefault("corrections", []).append(correction)
         return REPORT
 
     monkeypatch.setattr(main, "run_planner", fake_planner)
@@ -96,7 +98,14 @@ def test_research_streams_expected_events(client, pipeline):
     assert len(completes[0]["sources"]) == 2
     assert completes[1]["sources"] == []  # fallback still produces an entry
 
-    assert events[-2][1] == {"markdown": REPORT}
+    # REPORT cites a URL the orchestrator never returned: the guard retries once,
+    # then strips the link.
+    assert events[-2][1] == {
+        "markdown": GUARDED_REPORT,
+        "guard": {"citations_checked": 2, "invented_before_retry": 1, "retried": True, "removed": 1},
+    }
+    assert pipeline["corrections"][0] is None
+    assert "https://example.com/query-0/1" in pipeline["corrections"][1]
     assert pipeline["subtask_order"] == ["subtask_0", "subtask_1", "subtask_2"]
     assert [r.query for r in pipeline["summarizer_results"]] == ["query 0", "query 0", "query 1", "query 2"]
 
@@ -131,7 +140,7 @@ def test_follow_up_receives_history(client, pipeline):
     run_research(client, "first")
     run_research(client, "second")
 
-    assert pipeline["planner"] == ("second", main.DepthMode.standard, [{"query": "first", "report": REPORT}])
+    assert pipeline["planner"] == ("second", main.DepthMode.standard, [{"query": "first", "report": GUARDED_REPORT}])
 
 
 def test_delete_session_clears_it(client, pipeline):

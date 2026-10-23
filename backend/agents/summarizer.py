@@ -1,4 +1,6 @@
 import os
+from typing import Optional
+
 import httpx
 
 from models.schemas import SearchResult
@@ -19,6 +21,7 @@ async def run_summarizer(
     results: list[SearchResult],
     query: str,
     history: list[dict],
+    correction: Optional[str] = None,
 ) -> str:
     api_key = os.environ["OPENROUTER_API_KEY"]
 
@@ -36,6 +39,9 @@ async def run_summarizer(
     if history:
         context = "\n".join(f"Previous question: {h['query']}" for h in history[-3:])
         user_message = context + "\n\n" + user_message
+
+    if correction:
+        user_message += "\n\n" + correction
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(
