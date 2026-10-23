@@ -10,7 +10,7 @@ from tests.conftest import fallback_result, make_result, make_subtask
 SESSION = "test-session"
 # Deliberately cites URLs the orchestrator never returned.
 REPORT = "# Report\n- Claim [Other](https://not-a-search-result.com/z)\n"
-GUARDED_REPORT = "# Report\n- Claim Other (unverified)\n"
+GUARDED_REPORT = "# Report\n- Claim (unverified)\n"
 
 
 @pytest.fixture
@@ -102,7 +102,7 @@ def test_research_streams_expected_events(client, pipeline):
     # then strips the link.
     assert events[-2][1] == {
         "markdown": GUARDED_REPORT,
-        "guard": {"citations_checked": 2, "invented_before_retry": 1, "retried": True, "removed": 1},
+        "guard": {"citations_checked": 2, "invented_before_retry": 1, "retried": True, "low_coverage_retry": False, "removed": 1},
     }
     assert pipeline["corrections"][0] is None
     assert "https://example.com/query-0/1" in pipeline["corrections"][1]
