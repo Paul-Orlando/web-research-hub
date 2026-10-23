@@ -94,18 +94,19 @@ FastAPI Orchestrator
 │                                          │
 │   Categorizes results under headers     │
 │   Summarizes per category               │
-│   Cites every claim as [source](url)    │
+│   Sees numbered sources (no URLs),      │
+│   cites every claim as [S1], [S1][S4]   │
 └──────────────┬───────────────────────────┘
                ↓
 ┌─────────────────────────────────────────┐
 │   4. CITATION GUARD                     │
 │   Pure Python — server-side check       │
 │                                          │
-│   Every visible URL must be one the     │
-│   search step returned                  │
-│   Invented URL or low coverage →        │
-│   one summarizer retry                  │
-│   Still invented → link removed,        │
+│   Maps each [Sn] to the real            │
+│   [domain](url) the search returned     │
+│   Unknown ID, raw URL or low            │
+│   coverage → one summarizer retry       │
+│   Still invalid → citation removed,     │
 │   claim marked (unverified)             │
 └──────────────┬───────────────────────────┘
                ↓
@@ -141,9 +142,10 @@ FastAPI Orchestrator
 - **MCP tool layer** — search and export operations route through
   the Web Research Hub MCP Server, making the tool layer
   independently reusable by any MCP-compatible client
-- **Citation guard** — a server-side check that no report shows a
-  URL the search step didn't return; invented links are retried,
-  then removed
+- **Citation guard** — the Summarizer cites numbered sources and
+  the server maps them to real links, so no report shows a URL the
+  search step didn't return; invalid citations are retried, then
+  removed
 - **Measured, not assumed** — a 45-run research quality eval with
   an LLM judge, plus a mocked pytest suite and GitHub Actions CI
 
@@ -187,14 +189,21 @@ the Summarizer model can be swapped back via a one-line change
 in `summarizer.py`.
 
 **Citations are verified in code, not trusted from the prompt**
-The Summarizer is told to cite only the sources it was given, but
-a prompt is not a guarantee. A server-side citation guard compares
-every visible URL in the report with the URLs the Orchestrator
-actually returned. An invented URL or a report with too few
-citations gets one Summarizer retry with a correction note;
-anything still invented is removed and the claim is marked
-(unverified), so a fabricated link never reaches the reader. The
-eval measured the cost of this: +0.8 s and +4% per query.
+The Summarizer never sees or writes a URL. It gets the search
+results as a numbered source list (`[S1]` title, domain, date,
+summary) and cites claims by ID, leaving out any claim no listed
+source supports. A server-side citation guard maps each ID to the
+real `[domain](url)` link, so every link in a report is a URL the
+Orchestrator actually returned. An earlier version let the model
+copy URLs itself, and the eval found it mis-copying long ones (an
+extra digit in an article ID, `.com` for `.org`). An ID that
+doesn't exist, a raw URL that slips through, or a report with too
+few citations gets one Summarizer retry; anything still invalid
+is removed and the claim is marked (unverified). The low-coverage
+retry always lets the model drop unsupported claims: asking only
+for more citations made it invent sources. With IDs the eval saw
+no invented citations in 45 first drafts and no retries, and
+queries got faster (19.5 s vs 26.6 s) and 10% cheaper.
 
 **Citations render as visible domains in exported documents**
 Exports render citations as `claim text (domain.com)` so the
@@ -286,7 +295,7 @@ web-research-hub/
 │   │   ├── planner.py
 │   │   ├── orchestrator.py
 │   │   ├── summarizer.py
-│   │   └── citation_guard.py   verifies every cited URL
+│   │   └── citation_guard.py   maps source IDs to links, checks URLs
 │   ├── tools/
 │   │   └── exa_search.py       MCP client → Web Research Hub
 │   │                           MCP Server (Streamable HTTP)
@@ -380,27 +389,39 @@ an LLM judge checking whether cited sources support the claims. Setup,
 metric definitions and the full per-question table are in
 [`backend/evals/README.md`](backend/evals/README.md).
 
-Each run is 45 pipeline runs (Gemini 2.5 Flash, judge GPT-4.1 mini). The
-server-side citation guard checks every visible URL against the search
-results, retries the summarizer once on invented URLs or low citation
-coverage, and removes anything still invented:
+Each eval is 45 pipeline runs (Gemini 2.5 Flash, judge GPT-4.1 mini). Three
+configurations so far: no guard; guard v2, a server-side check of every
+visible URL with one retry and removal of anything still invented; and ID
+citations, where the summarizer cites numbered sources and the backend maps
+them to links (see
+[Citations are verified in code](#key-design-decisions)):
 
-| Metric | No guard (2026-10-22) | Citation guard (2026-10-23) |
-|---|---|---|
-| Invented-source rate (visible URL not in search results) | 2% (5 URLs in 5 runs) | **0%** |
-| Citation coverage (bullets/sentences with a citation) | 69% (1 run with zero citations) | **72%** (no run under 50%) |
-| Citation support (judge, sampled claims) | 97% supported (n=220) | 97% supported (n=225) |
-| False-premise question flagged instead of answered | 2/3 | 3/3 |
-| Ambiguous question acknowledged | 3/3 | 3/3 |
-| Latency / cost per query | 25.8 s · $0.0316 | 26.6 s · $0.0328 (+4%) |
-| Guard activity | — | retried 12/45 runs, URLs removed in 3 |
+| Metric | No guard (2026-10-22) | Guard v2 (2026-10-23) | ID citations (2026-10-23) |
+|---|---|---|---|
+| Invented sources shown to reader | 2% (5 URLs in 5 runs) | 0% | **0%** |
+| Invented citations in the model's first draft | 5 in 5 runs | 7 in 6 runs | **0** |
+| Citation coverage (bullets/sentences with a citation) | 69% | 72% | **84%** |
+| Report units (bullets/sentences) per run | 32.6 | 30.6 | 29.7 |
+| Citation support (judge, sampled claims) | 97% (n=220) | 97% (n=225) | **99%** (n=225) |
+| Claims marked (unverified) | 0 | 10 | **0** |
+| False-premise question flagged instead of answered | 2/3 | 3/3 | 3/3 |
+| Ambiguous question acknowledged | 3/3 | 3/3 | 3/3 |
+| Latency / cost per query | 25.8 s · $0.0316 | 26.6 s · $0.0328 | **19.5 s · $0.0294** |
+| Guard retries | — | 12/45 | **0/45** |
 
-Per question, cost ranges from about $0.025–0.030 at Quick depth to about
-$0.051–0.056 at Standard. The first version of the guard had parsing bugs
-(it stripped real URLs containing parentheses and missed bare-text URLs); the
-eval caught them, and the
-[eval README](backend/evals/README.md#before--after-citation-guard) has the
-full per-question table and history.
+All 5 invented URLs in the no-guard run were mis-copies of real results (an
+extra digit, `.com` for `.org`, a doubled word), and guard v2's coverage retry
+made the model invent 8 URLs on one question. Handing the model IDs instead
+of URLs removed both problems. One trade-off: reports are about as long on
+average, but `raft` and `heat_pump_vs_furnace` came out 24-32% shorter, so
+part of their coverage gain comes from dropping uncited claims.
+
+Per question, cost ranges from about $0.023–0.026 at Quick depth to about
+$0.046–0.053 at Standard. The
+[eval README](backend/evals/README.md#citation-guard-and-id-citations) has
+the full per-question tables, the classification of each invented URL, and
+the guard's history, including parsing bugs in its first version that the
+eval caught.
 
 ---
 
@@ -522,8 +543,6 @@ for deployment instructions.
 
 ## Roadmap
 
-- [ ] Raise citation coverage on technical topics (lowest:
-      CRISPR at 56%)
 - [ ] Source credibility weighting in the synthesis step
 - [ ] Document upload + vector search (ChromaDB) — draw on
       both live web results and uploaded documents
@@ -568,7 +587,10 @@ showed occasional invented citations (5 URLs in 45 runs) and one
 report with no citations at all, so a server-side citation guard
 was added. The eval also caught bugs in the guard's first version
 (it stripped real URLs containing parentheses), which were fixed
-and re-measured before the final numbers above.
+and re-measured. The invented URLs turned out to be mis-copies of
+real results, so the Summarizer now cites numbered source IDs and
+the guard maps them to links: citation coverage rose from 72% to
+84% (CRISPR from 56% to 80%) with no invented citations.
 
 ---
 

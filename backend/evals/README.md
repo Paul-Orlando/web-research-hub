@@ -57,23 +57,33 @@ python -m evals.run                          # full: 15 questions x 3 runs, abou
 
 Actual cost of the first full run was $1.49: $0.40 OpenRouter (pipeline +
 judge) and $1.09 Exa. The citation guard adds one summarizer call for each
-run it retries.
+run it retries. The ID-citation run cost $1.42 (no retries).
 
 | Flag | Default | |
 |---|---|---|
 | `--questions N` | all | only the first N questions in `questions.yaml` |
+| `--only IDS` | all | comma-separated question ids, e.g. `--only raft,crispr_editing` |
 | `--runs N` | 3 | runs per question |
 | `--judge-model M` | `openai/gpt-4.1-mini` | OpenRouter model for the citation judge |
 | `--max-cost USD` | 5.00 | stop once the estimated spend passes this |
 | `--mcp-url URL` | `http://localhost:8001` | local MCP server |
-| `--no-guard` | off | skip the citation guard and score raw summarizer output |
+| `--no-guard` | off | skip the citation guard: source IDs are still mapped to links, but there is no retry and no URL check |
 | `--tag T` | none | write `results/<date>-<T>.json` instead of `results/<date>.json` |
-| `--compare-to FILE` | none | earlier results file (relative to `evals/`); writes the before/after table |
+| `--label L` | `ID citations` | this run's column name in the comparison table |
+| `--compare-to LABEL=FILE ...` | none | earlier results files (relative to `evals/`), oldest first; writes the comparison table, using only the questions in this run |
 
-Output: raw per-run data (plan, search results, report, metrics, judge labels,
-token usage) goes to `results/<date>.json`, and the summary table below is
-rewritten in place. A second run on the same day overwrites both (use `--tag`
-to keep them apart).
+Output: raw per-run data (plan, search results, numbered source list, the
+summarizer's first and retry drafts, bad citations, final report, metrics,
+judge labels, token usage) goes to `results/<date>.json`. The file is
+rewritten after every run, so an interrupted eval keeps the runs it finished
+(`meta.complete` is `false` until the end). The summary and comparison tables
+below are rewritten when the eval finishes. A second run on the same day
+overwrites both (use `--tag` to keep them apart).
+
+Each run's `citation_failures` lists every unknown source ID and invented URL
+in the first and retry drafts. Each invented URL comes with the most similar
+returned URL (`closest_source`, `similarity`), to tell a mis-copied source
+from one that isn't in the results at all.
 
 After a change to the scoring code, re-score saved runs without any API calls
 (judge labels, cost and latency are kept as recorded):
@@ -94,8 +104,10 @@ python -m evals.rescore results/2026-10-22.json results/2026-10-22-guard.json
 | Metric | Definition |
 |---|---|
 | Sources | Search results with a URL, per run |
-| Citation coverage | % of report units (bullets, plus sentences of non-bullet prose; headings excluded) containing a `[text](url)` citation |
+| Citation coverage | % of report units (bullets, plus sentences of non-bullet prose; headings excluded) containing a `[text](url)` citation, scored after source IDs are mapped to links |
 | Invented sources | % of unique visible URLs (link targets, URLs in link labels, and bare URLs, which the frontend renders as links) not among the run's search-result URLs, after normalizing scheme, `www.`, trailing slash, fragment and `utm_*`. URLs with balanced parentheses are parsed whole. **Target 0%.** The offending URLs are listed in the raw JSON |
+| Invented in first draft | Unknown source IDs plus invented URLs in the summarizer's first draft, before the guard retries or strips anything (for runs without the guard, the report itself) |
+| Unverified claims | `(unverified)` markers in the final report: citations the guard removed after its retry still pointed at no returned source |
 | Domains cited | Unique domains among cited URLs, per run |
 | Supported / partial | An LLM judge labels up to 5 sampled (claim, cited source summary) pairs per run as supported, partial or unsupported, using the source text only. Rates are pooled across runs. Claims citing only invented URLs aren't judged; they're counted under Invented sources |
 | Handling | For `no_answer` questions, and any run where every search came back empty: correct means the judge confirms the report flags the missing information **and** it cites no invented URLs. For `ambiguous` questions: whether the report acknowledges the ambiguity |
@@ -114,24 +126,66 @@ claim that's true on the page but missing from the summary is labelled
 partial or unsupported. Search results vary between runs, which is why each
 question runs 3 times.
 
-## Before / after: citation guard
+## Citation guard and ID citations
 
-The app's citation guard (`agents/citation_guard.py`) checks every URL in the
-summarizer's report against the URLs the orchestrator returned. On a problem
-it retries the summarizer once with a correction note, and if the retry still
-invents URLs it removes them, leaving `(unverified)`. "After" scores the
-report the user actually sees.
+Three configurations, 15 questions x 3 runs each. "Shown to reader" scores
+the report the user actually sees.
 
-The table compares no guard (2026-10-22) with the fixed guard v2 (`f6168ba`,
-2026-10-23). The guard also retries once when sources exist but the report has
-zero citations or under 50% coverage (`low_coverage_retry`); invented-URL and
-low-coverage corrections share that single retry.
+- **No guard** (2026-10-22): the summarizer saw each source's URL and wrote
+  `[source](url)` links itself.
+- **Guard v2** (`f6168ba`, 2026-10-23): same prompt, plus a server-side check
+  of every visible URL against the URLs the orchestrator returned. On a
+  problem (an invented URL, zero citations, or coverage under 50%) it retried
+  the summarizer once with a correction note, then removed anything still
+  invented, leaving `(unverified)`.
+- **ID citations** (2026-10-23): the summarizer gets a numbered source list
+  (`[S1]` title, domain, date, summary) with **no URLs**, and cites
+  `[S1]` or `[S1][S4]`. It is told to leave out any claim no listed source
+  supports. The backend (`agents/citation_guard.py`) maps each ID to a
+  `[domain](url)` link, so the frontend, exports and session history are
+  unchanged. An unknown ID counts as invented: one retry, then it becomes
+  `(unverified)`. Raw URLs in the model output are still checked as in guard
+  v2, as a backstop.
 
-Guard v2, 45 runs: 12 retries (6 for invented URLs, 6 for low coverage), with
-URLs stripped in 3 runs (10 URLs, 8 of them in `crispr_editing`). No run ended
-with zero citations or under 50% coverage (no guard: 1 zero-citation run).
-Latency went from 25.8 s to 26.6 s per query, and cost from $0.0316 to $0.0328
-(+4%).
+**Why the change.** All 5 invented URLs in the no-guard run were near-copies
+of real search results, not sources cited from memory. The model mis-copied
+long URLs, so the links were broken or pointed at the wrong page:
+
+| Question | Cited (invented) | Real search result |
+|---|---|---|
+| `berlin_wall` | AP News article ID `...0c1431c13fab4c52a5`**`5`**`139d7992f5530b` (extra digit) | `...0c1431c13fab4c52a5139d7992f5530b` |
+| `montreal_protocol` | `diva-portal.org/.../diva2:`**`1381777`**`/FULLTEXT01.pdf` | `diva2:1381798` |
+| `rust_vs_go` | `johal.in/language-benchmark-`**`benchmark-`**`rust-185-vs-go-123-vs` (doubled word) | `johal.in/language-benchmark-rust-185-vs-go-123-vs` |
+| `crispr_editing` | `en.wikipedia.`**`com`**`/wiki/Prime_editing` | `en.wikipedia.org/wiki/Prime_editing` |
+| `no_answer_math_nobel` | **`imu-news.org`**`/imu-news/archive/2025/...` | `mathunion.org/imu-news/archive/2025/...` |
+
+In guard v2, `crispr_editing` run 0's first draft had **no** invented URLs
+but low coverage. The low-coverage retry ("every factual claim must include a
+citation") then produced 8 invented URLs, which the guard removed. That is why
+`crispr_editing` coverage fell to 56%: pressure to cite more made the model
+cite sources it didn't have. The removed URLs weren't saved, so they can't be
+classified. Since ID citations, the coverage retry says "cite a source ID for
+each claim, and remove claims no listed source supports". It never asks for
+more citations without allowing removal, and every run saves its first and
+retry drafts plus a list of bad citations (`citation_failures`).
+
+**Result.** With ID citations, no first draft in 45 runs cited an unknown ID
+or wrote a URL, so the guard never retried and removed nothing. Coverage rose
+from 72% to 84%. Judge support was 99% (n=225), latency fell from 26.6 s to
+19.5 s per query (no retries, shorter prompt), and cost fell 10%. A 5-question
+technical subset (`crispr_editing`, `penicillin`, `lfp_vs_nmc`,
+`heat_pump_vs_furnace`, `raft`) was run first as a go/no-go check:
+`results/2026-10-23-ids-tech.json`.
+
+Reports are 3% shorter on average than in guard v2 (29.7 vs 30.6 units per
+run), but not evenly. `raft` (-24%, 28.3 vs 37.3 units) and
+`heat_pump_vs_furnace` (-32%, 24.0 vs 35.3) were shorter in all three runs
+and have slightly fewer cited claims in absolute terms (about 25 vs 27 and 24
+vs 26). The "leave the claim out" rule seems to trim them, so part of their
+coverage gain comes from dropping uncited text. Other questions grew, e.g.
+`news_semiconductors` (+29%) and `montreal_protocol` (+31%).
+`crispr_editing`'s judge support was 87% (13 of 15 sampled claims), against
+100% in guard v2.
 
 **Guard v1** (`71e6cd3`, results in `results/2026-10-22-guard.json`) had three
 bugs, all found by its eval run:
@@ -151,63 +205,77 @@ too, so the saved runs were re-scored with the fixed parser
 and latency are as recorded.
 
 <!-- compare:start -->
-_Before: `results/2026-10-22.json` (no guard, 45 runs). After: `results/2026-10-23-guard-v2.json` (citation guard on, 45 runs). Same questions, 3 runs each; search results differ between runs._
+_15 questions, 45 runs per configuration; search results differ between runs. No guard: `results/2026-10-22.json`; Guard v2: `results/2026-10-23-guard-v2.json`; ID citations: `results/2026-10-23-ids.json`._
 
-| Question | Invented sources | Citation coverage | Cost / run | Guard retried | Links stripped |
-|---|---|---|---|---|---|
-| `apollo11` | 0% → 0% | 80% → 80% | $0.0251 → $0.0255 | 0/3 | 0 |
-| `berlin_wall` | 6% → 0% | 59% → 68% | $0.0257 → $0.0252 | 0/3 | 0 |
-| `penicillin` | 0% → 0% | 85% → 86% | $0.0441 → $0.0511 | 1/3 | 0 |
-| `montreal_protocol` | 5% → 0% | 70% → 84% | $0.0270 → $0.0298 | 2/3 | 0 |
-| `news_ai_regulation` | 0% → 0% | 84% → 72% | $0.0262 → $0.0254 | 0/3 | 0 |
-| `news_climate` | 0% → 0% | 77% → 76% | $0.0268 → $0.0290 | 1/3 | 0 |
-| `news_semiconductors` | 0% → 0% | 79% → 73% | $0.0556 → $0.0561 | 1/3 | 1 |
-| `postgres_vs_mysql` | 0% → 0% | 67% → 67% | $0.0275 → $0.0277 | 0/3 | 0 |
-| `heat_pump_vs_furnace` | 0% → 0% | 67% → 74% | $0.0274 → $0.0271 | 0/3 | 0 |
-| `lfp_vs_nmc` | 0% → 0% | 40% → 75% | $0.0559 → $0.0564 | 2/3 | 0 |
-| `rust_vs_go` | 5% → 0% | 69% → 70% | $0.0275 → $0.0273 | 0/3 | 0 |
-| `raft` | 0% → 0% | 70% → 71% | $0.0268 → $0.0272 | 0/3 | 0 |
-| `crispr_editing` | 6% → 0% | 64% → 56% | $0.0267 → $0.0299 | 2/3 | 8 |
-| `ambiguous_mercury` | 0% → 0% | 74% → 71% | $0.0269 → $0.0274 | 1/3 | 0 |
-| `no_answer_math_nobel` | 7% → 0% | 76% → 76% | $0.0243 → $0.0264 | 2/3 | 1 |
-| **Overall** | 2% → 0% | 69% → 72% | $0.0316 → $0.0328 | 12/45 | 10 |
+| Metric | No guard | Guard v2 | ID citations |
+|---|---|---|---|
+| Invented sources shown to reader | 2% (5) | 0% (0) | 0% (0) |
+| Invented citations in first draft | 5 in 5 runs | 7 in 6 runs | 0 in 0 runs |
+| Citation coverage | 69% | 72% | 84% |
+| Report units / run | 32.6 | 30.6 | 29.7 |
+| Judge: supported / partial | 97% / 3% (n=220) | 97% / 2% (n=225) | 99% / 0% (n=225) |
+| Unverified claims (citation removed) | 0 | 10 | 0 |
+| Guard retries | — | 12/45 | 0/45 |
+| Latency / run | 25.8s | 26.6s | 19.5s |
+| Cost / run | $0.0316 | $0.0328 | $0.0294 |
+
+Per question (No guard → Guard v2 → ID citations):
+
+| Question | Citation coverage | Report units | Supported | Unverified | Guard retried | Cost / run |
+|---|---|---|---|---|---|---|
+| `apollo11` | 80% → 80% → 94% | 20.0 → 25.3 → 16.7 | 100% → 93% → 100% | 0 → 0 → 0 | — → 0/3 → 0/3 | $0.0251 → $0.0255 → $0.0237 |
+| `berlin_wall` | 59% → 68% → 85% | 27.7 → 25.0 → 22.7 | 93% → 100% → 100% | 0 → 0 → 0 | — → 0/3 → 0/3 | $0.0257 → $0.0252 → $0.0235 |
+| `penicillin` | 85% → 86% → 95% | 22.0 → 18.7 → 20.0 | 93% → 100% → 100% | 0 → 0 → 0 | — → 1/3 → 0/3 | $0.0441 → $0.0511 → $0.0458 |
+| `montreal_protocol` | 70% → 84% → 89% | 36.7 → 16.3 → 21.3 | 100% → 93% → 100% | 0 → 0 → 0 | — → 2/3 → 0/3 | $0.0270 → $0.0298 → $0.0244 |
+| `news_ai_regulation` | 84% → 72% → 94% | 26.3 → 24.0 → 17.3 | 100% → 100% → 100% | 0 → 0 → 0 | — → 0/3 → 0/3 | $0.0262 → $0.0254 → $0.0239 |
+| `news_climate` | 77% → 76% → 89% | 28.7 → 32.0 → 18.0 | 100% → 100% → 100% | 0 → 0 → 0 | — → 1/3 → 0/3 | $0.0268 → $0.0290 → $0.0243 |
+| `news_semiconductors` | 79% → 73% → 89% | 35.7 → 40.0 → 51.7 | 100% → 100% → 100% | 0 → 1 → 0 | — → 1/3 → 0/3 | $0.0556 → $0.0561 → $0.0531 |
+| `postgres_vs_mysql` | 67% → 67% → 74% | 43.7 → 42.0 → 44.7 | 100% → 87% → 100% | 0 → 0 → 0 | — → 0/3 → 0/3 | $0.0275 → $0.0277 → $0.0255 |
+| `heat_pump_vs_furnace` | 67% → 74% → 99% | 42.3 → 35.3 → 24.0 | 100% → 100% → 100% | 0 → 0 → 0 | — → 0/3 → 0/3 | $0.0274 → $0.0271 → $0.0244 |
+| `lfp_vs_nmc` | 40% → 75% → 78% | 50.7 → 38.0 → 38.7 | 100% → 93% → 100% | 0 → 0 → 0 | — → 2/3 → 0/3 | $0.0559 → $0.0564 → $0.0515 |
+| `rust_vs_go` | 69% → 70% → 80% | 42.3 → 39.0 → 44.7 | 100% → 87% → 100% | 0 → 0 → 0 | — → 0/3 → 0/3 | $0.0275 → $0.0273 → $0.0255 |
+| `raft` | 70% → 71% → 87% | 31.0 → 37.3 → 28.3 | 87% → 100% → 100% | 0 → 0 → 0 | — → 0/3 → 0/3 | $0.0268 → $0.0272 → $0.0234 |
+| `crispr_editing` | 64% → 56% → 80% | 30.3 → 36.7 → 35.0 | 93% → 100% → 87% | 0 → 8 → 0 | — → 2/3 → 0/3 | $0.0267 → $0.0299 → $0.0244 |
+| `ambiguous_mercury` | 74% → 71% → 82% | 35.0 → 32.7 → 41.0 | 100% → 100% → 100% | 0 → 0 → 0 | — → 1/3 → 0/3 | $0.0269 → $0.0274 → $0.0250 |
+| `no_answer_math_nobel` | 76% → 76% → 75% | 16.7 → 16.7 → 21.3 | 87% → 100% → 100% | 0 → 1 → 0 | — → 2/3 → 0/3 | $0.0243 → $0.0264 → $0.0232 |
 <!-- compare:end -->
 
 ## Results
 
 <!-- results:start -->
-_Run 2026-10-23: 15 questions x 3 runs, generator `google/gemini-2.5-flash`, judge `openai/gpt-4.1-mini`, citation guard on, total spend $1.55. Raw data: `results/2026-10-23-guard-v2.json`._
+_Run 2026-10-23: 15 questions x 3 runs, generator `google/gemini-2.5-flash`, judge `openai/gpt-4.1-mini`, citation guard on, source-ID citations, total spend $1.42. Raw data: `results/2026-10-23-ids.json`._
 
 | Question | Depth | Runs | Sources | Citation coverage | Invented sources | Domains cited | Supported / partial | Handling | Latency | Tokens | Cost / run |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| `apollo11` | quick | 3 | 6.0 | 80% | 0% | 4.7 | 93% / 0% | — | 18.6s | 4,609 | $0.0255 |
-| `berlin_wall` | quick | 3 | 6.0 | 68% | 0% | 5.3 | 100% / 0% | — | 17.7s | 4,248 | $0.0252 |
-| `penicillin` | standard | 3 | 14.7 | 86% | 0% | 10.3 | 100% / 0% | — | 34.9s | 10,117 | $0.0511 |
-| `montreal_protocol` | quick | 3 | 6.0 | 84% | 0% | 5.3 | 93% / 7% | — | 27.9s | 8,039 | $0.0298 |
-| `news_ai_regulation` | quick | 3 | 6.0 | 72% | 0% | 5.3 | 100% / 0% | — | 19.8s | 4,587 | $0.0254 |
-| `news_climate` | quick | 3 | 6.0 | 76% | 0% | 5.3 | 100% / 0% | — | 25.6s | 7,063 | $0.0290 |
-| `news_semiconductors` | standard | 3 | 16.0 | 73% | 0% | 9.3 | 100% / 0% | — | 45.9s | 14,188 | $0.0561 |
-| `postgres_vs_mysql` | quick | 3 | 6.0 | 67% | 0% | 5.0 | 87% / 13% | — | 26.3s | 6,410 | $0.0277 |
-| `heat_pump_vs_furnace` | quick | 3 | 6.0 | 74% | 0% | 5.7 | 100% / 0% | — | 25.0s | 5,732 | $0.0271 |
-| `lfp_vs_nmc` | standard | 3 | 14.7 | 75% | 0% | 11.3 | 93% / 0% | — | 44.7s | 17,613 | $0.0564 |
-| `rust_vs_go` | quick | 3 | 6.0 | 70% | 0% | 5.7 | 87% / 7% | — | 23.1s | 6,253 | $0.0273 |
-| `raft` | quick | 3 | 6.0 | 71% | 0% | 4.3 | 100% / 0% | — | 21.2s | 5,504 | $0.0272 |
-| `crispr_editing` | quick | 3 | 6.0 | 56% | 0% | 4.0 | 100% / 0% | — | 24.8s | 8,144 | $0.0299 |
-| `ambiguous_mercury` | quick | 3 | 6.0 | 71% | 0% | 5.0 | 100% / 0% | notes ambiguity 3/3 | 23.1s | 6,113 | $0.0274 |
-| `no_answer_math_nobel` | quick | 3 | 6.0 | 76% | 0% | 5.0 | 100% / 0% | flags no-answer 3/3 | 20.4s | 6,141 | $0.0264 |
-| **Overall** |  | 45 | 7.8 | 72% | 0% | 6.1 | 97% / 2% | flags no-answer 3/3, notes ambiguity 3/3 | 26.6s | 7,651 | $0.0328 |
+| `apollo11` | quick | 3 | 6.0 | 94% | 0% | 5.7 | 100% / 0% | — | 15.6s | 3,832 | $0.0237 |
+| `berlin_wall` | quick | 3 | 6.0 | 85% | 0% | 4.7 | 100% / 0% | — | 16.3s | 3,391 | $0.0235 |
+| `penicillin` | standard | 3 | 14.7 | 95% | 0% | 10.0 | 100% / 0% | — | 21.2s | 6,243 | $0.0458 |
+| `montreal_protocol` | quick | 3 | 6.0 | 89% | 0% | 4.0 | 100% / 0% | — | 16.7s | 4,476 | $0.0244 |
+| `news_ai_regulation` | quick | 3 | 6.0 | 94% | 0% | 3.3 | 100% / 0% | — | 17.3s | 3,925 | $0.0239 |
+| `news_climate` | quick | 3 | 6.0 | 89% | 0% | 5.0 | 100% / 0% | — | 16.6s | 4,073 | $0.0243 |
+| `news_semiconductors` | standard | 3 | 16.0 | 89% | 0% | 13.7 | 100% / 0% | — | 34.8s | 9,697 | $0.0531 |
+| `postgres_vs_mysql` | quick | 3 | 6.0 | 74% | 0% | 5.3 | 100% / 0% | — | 20.4s | 5,638 | $0.0255 |
+| `heat_pump_vs_furnace` | quick | 3 | 6.0 | 99% | 0% | 5.0 | 100% / 0% | — | 17.6s | 4,609 | $0.0244 |
+| `lfp_vs_nmc` | standard | 3 | 16.0 | 78% | 0% | 11.3 | 100% / 0% | — | 30.9s | 9,412 | $0.0515 |
+| `rust_vs_go` | quick | 3 | 6.0 | 80% | 0% | 5.3 | 100% / 0% | — | 19.5s | 5,376 | $0.0255 |
+| `raft` | quick | 3 | 6.0 | 87% | 0% | 3.7 | 100% / 0% | — | 13.1s | 3,871 | $0.0234 |
+| `crispr_editing` | quick | 3 | 6.0 | 80% | 0% | 4.0 | 87% / 7% | — | 18.6s | 4,489 | $0.0244 |
+| `ambiguous_mercury` | quick | 3 | 6.0 | 82% | 0% | 4.3 | 100% / 0% | notes ambiguity 3/3 | 19.0s | 4,409 | $0.0250 |
+| `no_answer_math_nobel` | quick | 3 | 6.0 | 75% | 0% | 4.0 | 100% / 0% | flags no-answer 3/3 | 15.2s | 3,550 | $0.0232 |
+| **Overall** |  | 45 | 7.9 | 84% | 0% | 6.0 | 99% / 0% | flags no-answer 3/3, notes ambiguity 3/3 | 19.5s | 5,133 | $0.0294 |
 
 ```
 Runs: 45 (15 questions x 3), errors: 0
-Citation coverage: 72%
+Citation coverage: 84%
 Invented-source rate: 0% (0 URLs)
-Citation support (judge, n=225): 97% supported, 2% partial, 1% unsupported
-Sources / run: 7.8, unique domains cited / run: 6.1
-Empty-result subtasks: 0/106
-Latency / run: 26.6s, tokens / run: 7,651, cost / run: $0.0328
-Total eval spend (incl. judge): $1.55
+Citation support (judge, n=225): 99% supported, 0% partial, 0% unsupported
+Sources / run: 7.9, unique domains cited / run: 6.0
+Empty-result subtasks: 0/107
+Latency / run: 19.5s, tokens / run: 5,133, cost / run: $0.0294
+Total eval spend (incl. judge): $1.42
 No-answer handling: 3/3 correct
 Ambiguity acknowledged: 3/3
-Citation guard: retried 12/45 runs, links stripped in 3 runs (10 links)
+Unverified claims (citation removed): 0
+Citation guard: retried 0/45 runs, links stripped in 0 runs (0 links)
 ```
 <!-- results:end -->
